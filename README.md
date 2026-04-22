@@ -103,6 +103,91 @@ Key design principles:
 
 ---
 
+## Fabric RTI Architecture Patterns — Overview & Comparison
+
+Microsoft Fabric Real-Time Intelligence supports several architecture patterns. This section compares them and explains why **Pattern B** was chosen for this use case.
+
+### Pattern A — Streaming (Kafka / Event Hubs → Eventstream → Eventhouse)
+
+![Pattern A — Kafka → Eventstream → Eventhouse → Power BI / Activator → Teams](images/Architecture_Pattern_A.png)
+
+- **Source:** true streaming — Kafka, Event Hubs, IoT Hub, MQTT, CDC feeds, Pub/Sub.
+- **Ingest:** no-code Eventstream (filter / aggregate / join in-flight).
+- **Store:** Eventhouse / KQL DB.
+- **Latency:** ~1–5 seconds source → queryable.
+- **Best for:** IoT telemetry, clickstream, fraud, logs, AI/agent telemetry, content-safety signals.
+- **Trade-off:** highest throughput & lowest latency, but continuous CU consumption and a Kafka-compatible producer is required.
+
+### Pattern B — Event-driven Batch (ADLS Gen2 → Pipeline → Eventhouse) ⭐ *(this repo)*
+
+![Pattern B — ADLS Gen2 → Data Pipeline → Eventhouse → Power BI / Activator → Teams](images/Architecture_Pattern_B.png)
+
+- **Source:** files (CSV / JSON / Parquet) landing in ADLS Gen2 or OneLake.
+- **Ingest:** Data Pipeline triggered by `Microsoft.Storage.BlobCreated`.
+- **Store:** Eventhouse / KQL DB.
+- **Latency:** ~15–60 seconds file-land → Power BI.
+- **Best for:** scheduled / semi-batch extracts (5/10/15/30-min drops), core-banking / ERP exports, bank intraday monitoring.
+- **Trade-off:** pay-per-run (very low idle cost) + full ETL control (Lookup / If / Copy) + easy lineage — but not suited for sub-second latency.
+
+### Pattern C — Event-driven Batch (ADLS Gen2 → Pipeline → Lakehouse)
+
+![Pattern C — ADLS Gen2 → Data Pipeline → Lakehouse → Power BI / Activator → Teams](images/Architecture_Pattern_C.png)
+
+- **Source:** same as Pattern B.
+- **Store:** **Lakehouse** (Delta Lake + SQL endpoint).
+- **Latency:** ~1–10 minutes (Delta commit + caching).
+- **Best for:** historical warehouse, medallion architecture, large dim joins, ML feature stores, data marts.
+- **Trade-off:** not optimized for hot-path time-series queries; Power BI 30-s APR is not practical over Lakehouse.
+
+### Reference Architecture — "Everything together"
+
+![RTI Reference Architecture — full surface with Real-Time Dashboard, KQL Queryset, Copilot, Data Agent](images/Referance_Architecture.png)
+
+A superset showing Eventstream + Eventhouse feeding **all four serving surfaces** (Power BI Report, Real-Time Dashboard, KQL Queryset) plus Activator + Copilot + Data Agent + Operations Agent. Use it as the long-term target and pick A/B/C subsets per workload.
+
+### Side-by-side comparison
+
+| Criterion | Pattern A (Stream) | **Pattern B (File-event)** ⭐ | Pattern C (Lakehouse) |
+|---|---|---|---|
+| Source shape | Continuous stream | Files on cadence | Files on cadence |
+| Typical source | Kafka / EH / IoT / CDC | ADLS CSV / JSON / Parquet | ADLS CSV / JSON / Parquet |
+| Ingest tool | Eventstream | **Data Pipeline** | Data Pipeline |
+| Landing store | Eventhouse (KQL) | **Eventhouse (KQL)** | Lakehouse (Delta) |
+| End-to-end latency | 1–5 s | **15–60 s** | 1–10 min |
+| Hot query (point / filter) | ⚡⚡⚡ | ⚡⚡⚡ | ⚡⚡ |
+| Power BI APR ≤ 30 s | ✅ | ✅ | ⚠️ |
+| ETL control (dedup / audit / retry) | Medium | **High** | High |
+| File-level idempotency | Complex | **Native** (`ingest-by` + control table) | Manual MERGE |
+| Cost at rest | $$$ | **$** | $$ |
+| Ops skill required | Streaming engineer | **Data engineer** | Lake engineer |
+| Lineage per file | Harder | **Trivial** (pipeline params) | Moderate |
+
+### Recommendation — why Pattern B fits this use case best
+
+The business scenario is: **core-banking extracts land every 10 minutes as CSV in ADLS Gen2**; operations needs dashboards refreshing within a minute and Teams alerts on anomalies.
+
+1. **Source reality** — the upstream is file-based, not streaming. Forcing Kafka (Pattern A) would be a costly retrofit.
+2. **Latency SLA** — ops need < 1 min; Pattern B delivers 15–60 s comfortably. Pattern A's 1-sec latency exceeds the SLA at higher cost; Pattern C's 1–10 min may miss it.
+3. **Cost** — Pattern B pays only on file arrival (~144 runs/day), orders of magnitude cheaper than a continuous Eventstream.
+4. **Governance & audit** — banks need "which file produced which rows". Pipelines give this natively via the `ProcessedFiles` control table + lineage columns.
+5. **Idempotency** — `Get Metadata → Lookup → If → Copy (ingest-by tag)` is the canonical pattern and maps 1-to-1 to Pattern B.
+6. **Operational simplicity** — existing data engineers already know pipelines; no new streaming runtime to operate.
+7. **Hot query path preserved** — KQL still powers 30-s Power BI APR and sub-second Activator evaluation.
+
+### 🧭 When to evolve
+
+| Future trigger | Move to |
+|---|---|
+| Upstream begins emitting Kafka / Event Hubs | Pattern A |
+| File cadence < 1 min or SLA < 5 s | Pattern A |
+| Need long-term cross-domain joins (customer MDM, ML features) | Hybrid — enable **OneLake availability** on the Eventhouse so data is simultaneously queryable as Delta |
+| Add Copilot / Data Agent / Operations Agent | Reference Architecture |
+
+The **balanced hybrid**: once Pattern B is running, turn on OneLake availability on the KQL table. You get Pattern B's hot path **and** Pattern C's lake access from a single source of truth — no ingestion refactor required.
+
+---
+
+
 ## Data Model
 
 **`DepositMovement`** (business table, 16 columns):
