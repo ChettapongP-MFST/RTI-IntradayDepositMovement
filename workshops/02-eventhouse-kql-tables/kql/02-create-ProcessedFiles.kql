@@ -1,0 +1,29 @@
+// Workshop 02 — Create ProcessedFiles audit/control table
+// Run in the KQL Database "DepositMovement"
+
+.create table ProcessedFiles (
+    FileName:      string,
+    IngestedAtUtc: datetime,
+    RowCount:      long,
+    Status:        string,      // Success | Failed | Skipped-Duplicate
+    PipelineName:  string,
+    PipelineRunId: string,
+    RunAsUser:     string,
+    ErrorMsg:      string
+)
+
+.create table ProcessedFiles ingestion csv mapping 'ProcessedFiles_mapping'
+```
+[
+  {"Column":"FileName",      "Properties":{"Ordinal":"0"}},
+  {"Column":"IngestedAtUtc", "Properties":{"Ordinal":"1"}},
+  {"Column":"RowCount",      "Properties":{"Ordinal":"2"}},
+  {"Column":"Status",        "Properties":{"Ordinal":"3"}},
+  {"Column":"PipelineName",  "Properties":{"Ordinal":"4"}},
+  {"Column":"PipelineRunId", "Properties":{"Ordinal":"5"}},
+  {"Column":"RunAsUser",     "Properties":{"Ordinal":"6"}},
+  {"Column":"ErrorMsg",      "Properties":{"Ordinal":"7"}}
+]
+```
+
+.alter table ProcessedFiles policy streamingingestion enable

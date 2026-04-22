@@ -1,0 +1,23 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets / local config
+*.env
+*.env.*
+.env
+secrets.json
+local.settings.json
+
+# Azure / Fabric exports (raw)
+*.pat
+
+# Node / scripts scratch
+node_modules/
+*.log
+
+# Temporary
+tmp/
+*.tmp
