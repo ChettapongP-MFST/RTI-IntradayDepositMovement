@@ -37,18 +37,13 @@ This excludes sidecars (`.tmp`, `.crc`, `_SUCCESS`, etc.) and fires **only** for
 
 Trigger name (Reflex item): `tg_blobcreated_deposit`. Select **Create**.
 
-## 5.5 Validate
+## 5.5 Validate (via Azure Portal upload)
 
-- Upload one CSV to `incoming/`:
-  ```powershell
-  $key = (az storage account keys list -n $sa -g $rg --query "[0].value" -o tsv)
-  az storage blob upload `
-      --account-name $sa --account-key $key `
-      --container-name intraday-deposits `
-      --name "incoming/mock_0030_0100.csv" `
-      --file "resources/datasets/mock_0030_0100.csv"
-  ```
-- Within ~15 seconds, a pipeline run starts. Check **Monitor hub** → **Pipeline runs**.
+1. **[portal.azure.com](https://portal.azure.com)** → open the storage account → **Data storage** → **Containers** → `intraday-deposits`.
+2. Click into `incoming/` folder (or create it via **+ Add Directory**).
+3. Top toolbar → **Upload** → pick `resources/datasets/mock_0030_0100.csv` from your local copy of this repo → **Upload**.
+4. Switch to **Fabric Portal** → left nav → **Monitor** (Monitor hub) → **Pipeline runs**.
+5. Within ~15 seconds, a new run of `pl_ingest_DepositMovement` should appear and complete **Succeeded**.
 
 ## ✅ Exit Criteria
 

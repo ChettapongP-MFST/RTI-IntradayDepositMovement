@@ -5,6 +5,8 @@ ADLS Gen2 → Fabric Data Pipeline (event-triggered) → Eventhouse (KQL DB) →
 
 A modular, hands-on workshop series that builds a near-real-time intraday deposit monitoring solution on Microsoft Fabric using **Pattern B** (Eventhouse-centric RTI). Designed to be completed sequentially from Workshop 00 to Workshop 09.
 
+> 🖱️ **Portal-first design** — every workshop is written for **analyst end-users** working in a browser (Azure Portal + Fabric Portal + Power BI). No Azure CLI or PowerShell is required for the happy path. The `scripts/` folders retain optional automation for platform engineers.
+
 ---
 
 ## The Story

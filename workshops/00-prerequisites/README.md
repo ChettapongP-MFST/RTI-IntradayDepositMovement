@@ -7,15 +7,16 @@ Before starting any deployment, verify Azure and Fabric readiness and collect th
 
 ---
 
+> This workshop series is designed for **analyst end-users**. Every step runs in a **browser** — Azure Portal, Fabric Portal, Power BI — with no command-line tools required.
+
 ## 0.1 Azure prerequisites
 
-| # | Item | How to verify |
+| # | Item | How to verify (Portal) |
 |---|---|---|
-| 1 | Azure subscription with **Contributor** on target resource group | `az account show` / portal → RG → Access control (IAM) |
-| 2 | Permission to create **Microsoft.Storage/storageAccounts** | RG role Contributor (or Storage Account Contributor) |
-| 3 | Permission to assign **Storage Blob Data Contributor** RBAC | **User Access Administrator** or **Owner** on the storage scope |
-| 4 | Ability to run ARM template / PowerShell | Portal UI cannot create Fabric resource instance rules |
-| 5 | Azure CLI ≥ 2.60 and Az PowerShell ≥ 11 installed | `az --version`, `Get-Module Az -ListAvailable` |
+| 1 | Azure subscription with **Contributor** on target resource group | [portal.azure.com](https://portal.azure.com) → Resource group → **Access control (IAM)** → **View my access** |
+| 2 | Permission to create **Storage accounts** | Same IAM view — role must be Contributor / Owner / Storage Account Contributor |
+| 3 | Permission to assign **Storage Blob Data Contributor** RBAC | IAM → **Check access** → role must be **User Access Administrator** or **Owner** |
+| 4 | Ability to deploy an ARM template via portal **Custom deployment** | Portal → search `deploy a custom template` (used once in Workshop 03) |
 
 ## 0.2 Fabric prerequisites
 
@@ -50,20 +51,16 @@ Keep these values at hand — later workshops reference them as variables.
 > **Tip:** Get the workspace GUID from the URL bar when the workspace is open:
 > `https://app.fabric.microsoft.com/groups/<WORKSPACE-GUID>/...`
 
-## 0.4 Authenticate
+## 0.4 Sign in
 
-```powershell
-az login
-az account set --subscription "<SUBSCRIPTION-ID>"
-
-Connect-AzAccount -Tenant "<TENANT-ID>"
-Set-AzContext -Subscription "<SUBSCRIPTION-ID>"
-```
+1. Open **[portal.azure.com](https://portal.azure.com)** in your browser → sign in with your work account.
+2. Top-right → subscription filter → ensure the **target subscription** is selected.
+3. Open **[app.fabric.microsoft.com](https://app.fabric.microsoft.com)** in a second tab → sign in → open the **target Fabric workspace**.
 
 ## ✅ Exit Criteria
 
-- [ ] All rows in **0.1** and **0.2** checked
+- [ ] All rows in **0.1** and **0.2** checked in the portal
 - [ ] All values in **0.3** filled
-- [ ] Both `az login` and `Connect-AzAccount` work against the target tenant/subscription
+- [ ] Azure Portal and Fabric Portal both open in your browser with the correct tenant selected
 
 → Proceed to **[Workshop 01 — Provision ADLS Gen2](../01-provision-adls-gen2/)**

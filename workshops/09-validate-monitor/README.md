@@ -24,32 +24,34 @@ Finalize the solution: run end-to-end validation, set up monitoring, apply house
 | Audit | `ProcessedFiles` table + Power BI "Data freshness" page |
 | Storage event delivery | Storage Account → **Events** → Event Subscriptions → Metrics |
 
-## 9.3 Housekeeping
+## 9.3 Housekeeping (Portal)
 
-```powershell
-# Remove personal IP from storage firewall
-az storage account network-rule remove -g $rg -n $sa --ip-address $myIp
-```
+**Remove your personal IP from the storage firewall:**
 
-Enable soft-delete on the container (if not already on), review rotation policy for keys.
+1. **[portal.azure.com](https://portal.azure.com)** → storage account → **Security + networking** → **Networking**.
+2. Under **Firewall**, click the **🗑** icon next to your IP entry → **Save**.
 
-Retention & caching policies on the KQL table:
+**Enable soft-delete (portal):**
+
+1. Storage account → **Data management** → **Data protection**.
+2. Enable **Blob soft delete** and **Container soft delete** → set retention 7–30 days → **Save**.
+
+**Retention & caching on the KQL table** — run these in the Fabric KQL queryset UI:
 
 ```kusto
 .alter table DepositMovement policy retention '{ "SoftDeletePeriod": "365.00:00:00", "Recoverability": "Enabled" }'
 .alter table DepositMovement policy caching hot = 90d
 ```
 
-## 9.4 Commit artifacts
+## 9.4 Save artifacts
 
-```powershell
-git add .
-git commit -m "Complete Pattern B workshop artifacts"
-git push
-```
+- Fabric items (pipeline, Eventhouse, Power BI report, Activator) are auto-saved in the workspace.
+- If you want to snapshot the pipeline JSON: Fabric → pipeline → **…** → **Export** → commit the file under `workshops/04-data-pipeline/pipeline/`.
+- For git users: use the **Source Control** view in VS Code (left sidebar) to stage, commit, and push — no command line needed.
 
 ## ✅ Project Done Criteria
 
 - [ ] All 9 workshops pass their exit criteria
-- [ ] Artifacts committed to GitHub
+- [ ] Personal IP removed from storage firewall
+- [ ] Soft-delete enabled on storage and retention policies applied to KQL
 - [ ] Operations team has access to Power BI report and Teams alerts

@@ -1,6 +1,6 @@
-# Workshop 06 — Simulate Real-Time Ingestion
+# Workshop 06 — Simulate Real-Time Ingestion (Portal)
 
-Replay the 16 mock CSVs from `resources/datasets/` into ADLS Gen2 — either at the **real 10-minute cadence** or in **accelerated mode** for quick end-to-end tests.
+Replay the 16 mock CSVs into ADLS Gen2 so the pipeline fires on each file and you can see dashboards update live. Use the **Azure Portal Storage browser** — no command line required.
 
 **Prerequisite:** [Workshop 05](../05-event-trigger/) complete
 **Next:** [Workshop 07 — Power BI Report](../07-powerbi-report/)
@@ -9,57 +9,49 @@ Replay the 16 mock CSVs from `resources/datasets/` into ADLS Gen2 — either at 
 
 ## 6.1 Prerequisites
 
-- Your IP is allow-listed on the storage firewall (Workshop 01.4), **or** you have another signed-in upload path.
-- You are signed into Azure (`az login`).
+- Your public IP is allow-listed on the storage firewall (done in Workshop 01.2 step 4).
+- You're signed into **[portal.azure.com](https://portal.azure.com)** with rights to upload blobs.
+- Your local clone of this repo contains the 16 files in `resources/datasets/`.
 
-## 6.2 Run the simulator
+## 6.2 Upload files via Azure Portal Storage browser
 
-Script: [scripts/06-simulate-upload.ps1](scripts/06-simulate-upload.ps1)
+### Option A — Quick smoke test (upload all 16 at once)
 
-### Real 10-minute cadence (production-realistic)
+1. Azure Portal → storage account → **Storage browser** (left nav) → **Blob containers** → `intraday-deposits` → `incoming/`.
+2. Toolbar → **Upload**.
+3. **Browse for files** → multi-select all 16 `mock_*.csv` files → **Upload**.
+4. Switch to Fabric Monitor hub. You'll see 16 pipeline runs queue up and complete within a minute or two.
 
-```powershell
-./workshops/06-simulate-ingestion/scripts/06-simulate-upload.ps1 `
-    -StorageAccount <sa> `
-    -ResourceGroup  <rg>
-```
-Total duration: ~2.5 hours for 16 files.
+### Option B — Realistic cadence (one file every 10 min)
 
-### Accelerated mode (30 s between files)
+For a more life-like demo, upload one file at a time with a timer:
 
-```powershell
-./workshops/06-simulate-ingestion/scripts/06-simulate-upload.ps1 `
-    -StorageAccount <sa> `
-    -ResourceGroup  <rg> `
-    -Accelerated
-```
-Total duration: ~8 minutes.
+1. Same navigation path as above.
+2. **Upload** → pick `mock_0000_0030.csv` → **Upload**.
+3. Wait 10 minutes (or accelerated to 30 s for a short demo).
+4. Repeat for the next file `mock_0030_0100.csv`, and so on.
+5. Keep the Fabric dashboard open to watch values tick up.
 
-### Custom cadence
+### Option C — Drag & drop in the Containers blade
 
-```powershell
-./workshops/06-simulate-ingestion/scripts/06-simulate-upload.ps1 `
-    -StorageAccount <sa> -ResourceGroup <rg> `
-    -IntervalSeconds 60
-```
+If you prefer the classic UI: Storage account → **Containers** → `intraday-deposits` → click into `incoming/` → simply **drag CSVs from Windows Explorer** onto the browser window.
 
 ## 6.3 Monitor during replay
 
-**Fabric Monitor hub** → Pipeline runs (updates per file drop).
-
-**KQL quick check:**
-
-```kusto
-ProcessedFiles
-| summarize Files=count(), Rows=sum(RowCount) by Status
-```
-
-Expected after full replay: 16 `Success`, 0 `Failed`, 0 `Skipped-Duplicate`.
+- **Fabric Portal → Monitor hub → Pipeline runs** — one row per file, updates live.
+- In the Fabric KQL Database `DepositMovement`, run this query to confirm:
+  ```kusto
+  ProcessedFiles
+  | summarize Files=count(), Rows=sum(RowCount) by Status
+  ```
+- Expected after all 16 files: **16 Success, 0 Failed, 0 Skipped-Duplicate**.
 
 ## ✅ Exit Criteria
 
-- [ ] All 16 files uploaded
+- [ ] All 16 files visible under `intraday-deposits/incoming/` in the Storage browser
 - [ ] `ProcessedFiles` shows 16 × `Success`
 - [ ] `DepositMovement` contains rows for every 30-min slot
 
 → Proceed to **[Workshop 07 — Power BI Report](../07-powerbi-report/)**
+
+> ℹ️ A bulk replay script `scripts/06-simulate-upload.ps1` is also provided for automation engineers; analysts can skip it.
