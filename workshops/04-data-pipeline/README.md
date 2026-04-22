@@ -1,6 +1,6 @@
 # Workshop 04 — Data Pipeline (Hardened & Idempotent)
 
-Build the Fabric Data Pipeline that ingests one CSV per run into `DepositMovement`, with duplicate protection and full audit via `ProcessedFiles`.
+Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `DepositMovement`, with duplicate protection and full audit written to the **Warehouse** table `wh_rti_control.dbo.ProcessedFiles`.
 
 **Prerequisite:** [Workshop 03](../03-trusted-workspace-access/) complete
 **Next:** [Workshop 05 — Event Trigger](../05-event-trigger/)
@@ -54,16 +54,15 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
 
 ### 4.4.2 `Lookup ProcessedFiles` — dedup check
 
-- Source: KQL Database (`DepositMovement`) via workspace identity.
-- Query:
-  ```kusto
-  ProcessedFiles
-  | where FileName == "@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}"
-          and Status == "Success"
-  | take 1
-  | project FileName
+- Source: **Warehouse** `wh_rti_control` via workspace identity (Fabric-native connection picker: **+ New** → **Warehouse** → select `wh_rti_control`).
+- Query (T-SQL):
+  ```sql
+  SELECT TOP (1) FileName
+  FROM dbo.ProcessedFiles
+  WHERE FileName = '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}'
+    AND Status   = 'Success';
   ```
-- First row only ✅.
+- **First row only** ✅.
 
 ### 4.4.3 `If Condition`
 
@@ -87,36 +86,68 @@ Expression: `@empty(activity('Lookup ProcessedFiles').output.firstRow)`
   - `ingestIfNotExists = ["FileName"]`  *(server-side dedup safety net)*
 - Retry: 3 × 60 s.
 
-**b) `Append Success` (Script / KQL activity, on Copy Success):**
+**b) `Append Success` (Script activity → Warehouse `wh_rti_control`, on Copy Success):**
 
-```kusto
-.ingest inline into table ProcessedFiles <|
-@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)},@{utcNow()},@{activity('Copy CSV to Eventhouse').output.rowsCopied},Success,@{pipeline().Pipeline},@{pipeline().RunId},@{concat(pipeline().TriggerType,':',coalesce(pipeline().TriggerName,'manual'))},
+```sql
+INSERT INTO dbo.ProcessedFiles
+    (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
+VALUES (
+    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    SYSUTCDATETIME(),
+    @{activity('Copy CSV to Eventhouse').output.rowsCopied},
+    'Success',
+    '@{pipeline().Pipeline}',
+    '@{pipeline().RunId}',
+    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
+    NULL
+);
 ```
 
-**c) `Append Failed` (on Copy Failure dependency):**
+**c) `Append Failed` (Script activity → Warehouse, on Copy Failure dependency):**
 
-```kusto
-.ingest inline into table ProcessedFiles <|
-@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)},@{utcNow()},0,Failed,@{pipeline().Pipeline},@{pipeline().RunId},@{concat(pipeline().TriggerType,':',coalesce(pipeline().TriggerName,'manual'))},@{replace(activity('Copy CSV to Eventhouse').error.message,',',';')}
+```sql
+INSERT INTO dbo.ProcessedFiles
+    (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
+VALUES (
+    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    SYSUTCDATETIME(),
+    0,
+    'Failed',
+    '@{pipeline().Pipeline}',
+    '@{pipeline().RunId}',
+    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
+    '@{replace(activity('Copy CSV to Eventhouse').error.message,'''','''''')}'
+);
 ```
 
 #### False branch — skip and audit
 
-**`Append Skipped-Duplicate`:**
+**`Append Skipped-Duplicate` (Script activity → Warehouse):**
 
-```kusto
-.ingest inline into table ProcessedFiles <|
-@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)},@{utcNow()},0,Skipped-Duplicate,@{pipeline().Pipeline},@{pipeline().RunId},@{concat(pipeline().TriggerType,':',coalesce(pipeline().TriggerName,'manual'))},
+```sql
+INSERT INTO dbo.ProcessedFiles
+    (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
+VALUES (
+    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    SYSUTCDATETIME(),
+    0,
+    'Skipped-Duplicate',
+    '@{pipeline().Pipeline}',
+    '@{pipeline().RunId}',
+    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
+    NULL
+);
 ```
+
+> 💡 Use the Fabric **Script** activity (not **Stored procedure**) and point it at the `wh_rti_control` Warehouse connection. Each audit branch is a single statement so there's no transaction concern.
 
 ## 4.5 Save and test manually
 
 1. Upload one CSV (e.g. `mock_0000_0030.csv`) to `intraday-deposits/incoming/` (using the temporarily-allow-listed IP from Workshop 01.4).
 2. Run the pipeline with `pFileName = mock_0000_0030.csv` and `pFolder = incoming`.
 3. Verify:
-   - `DepositMovement` has new rows with the 4 lineage columns populated.
-   - `ProcessedFiles` has **1** `Success` row.
+   - `DepositMovement` (KQL) has new rows with the 4 lineage columns populated — `DepositMovement | count`.
+   - `dbo.ProcessedFiles` (Warehouse) has **1** `Success` row — `SELECT TOP (5) * FROM dbo.ProcessedFiles ORDER BY IngestedAtUtc DESC;`.
 4. Re-run the same pipeline — verify **no new data rows**, just a new `Skipped-Duplicate` audit row.
 
 ## ✅ Exit Criteria

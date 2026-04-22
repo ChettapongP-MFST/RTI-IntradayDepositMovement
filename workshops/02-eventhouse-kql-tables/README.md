@@ -1,6 +1,9 @@
-# Workshop 02 — Eventhouse & KQL Tables
+# Workshop 02 — Eventhouse (KQL) + Warehouse (Control Table)
 
-Create the Eventhouse, the business table `DepositMovement`, and the audit table `ProcessedFiles`. Enable streaming ingestion for low-latency.
+Create two Fabric items:
+
+1. An **Eventhouse / KQL Database** for the hot-path business table `DepositMovement` (low-latency ingestion & query).
+2. A **Fabric Warehouse** for the audit/control table `dbo.ProcessedFiles` (T-SQL friendly, easy to join in Power BI, decoupled from the hot path).
 
 **Prerequisite:** [Workshop 01](../01-provision-adls-gen2/) complete
 **Next:** [Workshop 03 — Trusted Workspace Access](../03-trusted-workspace-access/)
@@ -11,9 +14,9 @@ Create the Eventhouse, the business table `DepositMovement`, and the audit table
 
 1. Open the Fabric workspace (from Workshop 00.3).
 2. **+ New item** → **Eventhouse** → name it `eh-rti-deposit`.
-3. Inside the Eventhouse, the default KQL Database `eh-rti-deposit` is created. Create (or rename to) a KQL Database named `DepositMovement`.
+3. Inside the Eventhouse, the default KQL Database is created. Create (or rename to) a KQL Database named `DepositMovement`.
 
-## 2.2 Create the business table
+## 2.2 Create the business table (KQL)
 
 Open the KQL Database → **Query** pane and run:
 
@@ -28,37 +31,53 @@ Schema:
 | Measures | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
 | Lineage | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
 
-## 2.3 Create the audit/control table
+## 2.3 Create the Fabric Warehouse
 
-- [kql/02-create-ProcessedFiles.kql](kql/02-create-ProcessedFiles.kql)
+1. Fabric workspace → **+ New item** → **Warehouse** → name it `wh_rti_control` → **Create**.
+2. Once provisioned, open the Warehouse and click **New SQL query**.
+
+## 2.4 Create the audit/control table (T-SQL)
+
+Paste and run the script:
+
+- [sql/02-create-ProcessedFiles.sql](sql/02-create-ProcessedFiles.sql)
 
 Schema:
 
 | Column | Type | Purpose |
 |---|---|---|
-| `FileName` | string | Natural key for dedup |
-| `IngestedAtUtc` | datetime | When the row was written |
-| `RowCount` | long | Rows copied by the pipeline |
-| `Status` | string | `Success` / `Failed` / `Skipped-Duplicate` |
-| `PipelineName` | string | `@pipeline().Pipeline` |
-| `PipelineRunId` | string | `@pipeline().RunId` |
-| `RunAsUser` | string | Trigger type + name |
-| `ErrorMsg` | string | Copy Activity error (if any) |
+| `FileName` | VARCHAR(260) | Natural key for dedup |
+| `IngestedAtUtc` | DATETIME2(3) | When the row was written |
+| `RowCount_` | BIGINT | Rows copied by the pipeline *(trailing `_` — `ROWCOUNT` is reserved in T-SQL)* |
+| `Status` | VARCHAR(32) | `Success` / `Failed` / `Skipped-Duplicate` |
+| `PipelineName` | VARCHAR(200) | `@pipeline().Pipeline` |
+| `PipelineRunId` | VARCHAR(64) | `@pipeline().RunId` |
+| `RunAsUser` | VARCHAR(200) | Trigger type + name |
+| `ErrorMsg` | VARCHAR(4000) | Copy Activity error (if any) |
 
-## 2.4 Enable streaming ingestion
+Verify:
 
-Already included in the KQL scripts above; verify with:
+```sql
+SELECT TOP (1) * FROM dbo.ProcessedFiles;
+SELECT COUNT(*) AS Rows_ FROM dbo.ProcessedFiles;
+```
+
+## 2.5 Enable streaming ingestion on the KQL table
+
+In the KQL Database query pane:
 
 ```kusto
 .show database DepositMovement policy streamingingestion
 .show table DepositMovement policy streamingingestion
-.show table ProcessedFiles policy streamingingestion
 ```
+
+(Warehouses don't have a streaming-ingestion policy — writes via pipeline `Script` / `Stored procedure` activity are sufficient for a per-file audit row.)
 
 ## ✅ Exit Criteria
 
-- [ ] `DepositMovement` table exists with 16 columns + `DepositMovement_mapping`
-- [ ] `ProcessedFiles` table exists with 8 columns + `ProcessedFiles_mapping`
-- [ ] Streaming ingestion enabled on both
+- [ ] Eventhouse + KQL Database `DepositMovement` exist, with the 16-column `DepositMovement` table + `DepositMovement_mapping`
+- [ ] Streaming ingestion enabled on `DepositMovement`
+- [ ] Warehouse `wh_rti_control` exists
+- [ ] Table `dbo.ProcessedFiles` exists with 8 columns; empty `SELECT` returns no rows
 
 → Proceed to **[Workshop 03 — Trusted Workspace Access](../03-trusted-workspace-access/)**

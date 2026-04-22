@@ -39,18 +39,19 @@ If you prefer the classic UI: Storage account → **Containers** → `intraday-d
 ## 6.3 Monitor during replay
 
 - **Fabric Portal → Monitor hub → Pipeline runs** — one row per file, updates live.
-- In the Fabric KQL Database `DepositMovement`, run this query to confirm:
-  ```kusto
-  ProcessedFiles
-  | summarize Files=count(), Rows=sum(RowCount) by Status
+- In the Fabric Warehouse `wh_rti_control`, run this T-SQL query to confirm:
+  ```sql
+  SELECT Status, COUNT(*) AS Files, SUM(RowCount_) AS Rows_
+  FROM dbo.ProcessedFiles
+  GROUP BY Status;
   ```
 - Expected after all 16 files: **16 Success, 0 Failed, 0 Skipped-Duplicate**.
 
 ## ✅ Exit Criteria
 
 - [ ] All 16 files visible under `intraday-deposits/incoming/` in the Storage browser
-- [ ] `ProcessedFiles` shows 16 × `Success`
-- [ ] `DepositMovement` contains rows for every 30-min slot
+- [ ] `dbo.ProcessedFiles` (Warehouse) shows 16 × `Success`
+- [ ] `DepositMovement` (KQL) contains rows for every 30-min slot
 
 → Proceed to **[Workshop 07 — Power BI Report](../07-powerbi-report/)**
 

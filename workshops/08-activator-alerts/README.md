@@ -26,7 +26,7 @@ Workspace → **+ New item** → **Activator** → name `act-deposit-alerts`.
 | Rule | Condition | Action |
 |---|---|---|
 | **Large net outflow** | `Net < -1,000,000` (per Channel per 30-min bin) | Post to Teams channel `#rti-alerts` |
-| **Ingestion failure** | `ProcessedFiles` — any `Status == "Failed"` in last 10 min | Email on-call + Teams |
+| **Ingestion failure** | `wh_rti_control.dbo.ProcessedFiles` — any `Status = 'Failed'` in last 10 min (use a Power BI semantic model measure over the Warehouse as the Activator source, or a scheduled Data Activator query on the Warehouse) | Email on-call + Teams |
 | **Missing file (SLA breach)** | `max(IngestedAtUtc) < ago(15m)` during operating hours | Teams @channel |
 
 ## 8.4 Connect Teams

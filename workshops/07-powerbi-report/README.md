@@ -39,7 +39,7 @@ Minutes Since Last Load := DATEDIFF([Latest Load], UTCNOW(), MINUTE)
 | **Intraday overview** | Net Movement trend by 30-min slot · Credit vs Debit clustered column · KPI tiles `Latest Load`, `Minutes Since Last Load` |
 | **Channel breakdown** | Bar Net by Channel · Matrix Channel × Transaction_Type · Donut Channel_Group |
 | **Product split** | Pie Product · Line Net_Amount by Product over Time |
-| **Data freshness & audit** | Cards from `ProcessedFiles` Status counts · Table of `Failed` rows with `ErrorMsg` |
+| **Data freshness & audit** | Cards from `wh_rti_control.dbo.ProcessedFiles` Status counts (T-SQL / DirectLake or Import) · Table of `Failed` rows with `ErrorMsg` |
 
 ## 7.4 Enable Automatic Page Refresh (APR)
 

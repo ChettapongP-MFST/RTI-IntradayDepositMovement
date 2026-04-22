@@ -27,7 +27,7 @@ This workshop series walks through building that solution end-to-end.
 |---|---|---|---|
 | 00 | [Prerequisites](workshops/00-prerequisites/) | — | Azure / Fabric readiness checklist |
 | 01 | [Provision ADLS Gen2](workshops/01-provision-adls-gen2/) | Azure Storage | Firewall-enabled storage account + container |
-| 02 | [Eventhouse & KQL Tables](workshops/02-eventhouse-kql-tables/) | Eventhouse / KQL DB | `DepositMovement` + `ProcessedFiles` tables |
+| 02 | [Eventhouse, KQL Table & Warehouse Control](workshops/02-eventhouse-kql-tables/) | Eventhouse / KQL DB + Fabric Warehouse | `DepositMovement` (KQL) + `dbo.ProcessedFiles` (Warehouse) |
 | 03 | [Trusted Workspace Access](workshops/03-trusted-workspace-access/) | Fabric Security | Workspace identity + resource instance rule |
 | 04 | [Data Pipeline](workshops/04-data-pipeline/) | Data Factory | Hardened, idempotent ingestion pipeline |
 | 05 | [Event Trigger](workshops/05-event-trigger/) | Eventstream + Reflex | `BlobCreated` → pipeline wire-up |
@@ -99,7 +99,7 @@ RTI-IntradayDepositMovement/
 Key design principles:
 
 - **Event-driven**: `Microsoft.Storage.BlobCreated` triggers the pipeline immediately when a file lands.
-- **Idempotent**: `ProcessedFiles` control table + KQL `ingest-by` tag prevent duplicate loads.
+- **Idempotent**: `dbo.ProcessedFiles` control table in a Fabric Warehouse + KQL `ingest-by` tag prevent duplicate loads.
 - **Traceable**: Every business row carries `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`.
 - **Secured**: ADLS Gen2 firewalled; Fabric reaches it via **Trusted Workspace Access** (resource instance rule).
 
@@ -171,7 +171,7 @@ The business scenario is: **core-banking extracts land every 10 minutes as CSV i
 1. **Source reality** — the upstream is file-based, not streaming. Forcing Kafka (Pattern A) would be a costly retrofit.
 2. **Latency SLA** — ops need < 1 min; Pattern B delivers 15–60 s comfortably. Pattern A's 1-sec latency exceeds the SLA at higher cost; Pattern C's 1–10 min may miss it.
 3. **Cost** — Pattern B pays only on file arrival (~144 runs/day), orders of magnitude cheaper than a continuous Eventstream.
-4. **Governance & audit** — banks need "which file produced which rows". Pipelines give this natively via the `ProcessedFiles` control table + lineage columns.
+4. **Governance & audit** — banks need "which file produced which rows". Pipelines give this natively via the `dbo.ProcessedFiles` control table (Fabric Warehouse, queryable via T-SQL) + lineage columns on the KQL business table.
 5. **Idempotency** — `Get Metadata → Lookup → If → Copy (ingest-by tag)` is the canonical pattern and maps 1-to-1 to Pattern B.
 6. **Operational simplicity** — existing data engineers already know pipelines; no new streaming runtime to operate.
 7. **Hot query path preserved** — KQL still powers 30-s Power BI APR and sub-second Activator evaluation.
@@ -201,9 +201,11 @@ The **balanced hybrid**: once Pattern B is running, turn on OneLake availability
 | Measures | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
 | Lineage | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
 
-**`ProcessedFiles`** (audit/control table, 8 columns):
+**`wh_rti_control.dbo.ProcessedFiles`** (audit/control table, Fabric Warehouse, 8 columns):
 
-`FileName`, `IngestedAtUtc`, `RowCount`, `Status` (Success / Failed / Skipped-Duplicate), `PipelineName`, `PipelineRunId`, `RunAsUser`, `ErrorMsg`
+`FileName`, `IngestedAtUtc`, `RowCount_`, `Status` (Success / Failed / Skipped-Duplicate), `PipelineName`, `PipelineRunId`, `RunAsUser`, `ErrorMsg`
+
+> The control table lives in a **Fabric Warehouse** (not the Eventhouse) so analysts can query it with standard T-SQL, join it easily in Power BI, and keep the hot-path KQL table focused on business facts.
 
 ---
 
