@@ -80,6 +80,7 @@ RTI-IntradayDepositMovement/
 │   └── 09-validate-monitor/
 ├── resources/
 │   └── datasets/          # 16 mock CSVs (30-min intraday slots)
+├── images/                # Architecture diagrams & screenshots
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -89,16 +90,9 @@ RTI-IntradayDepositMovement/
 
 ## Target Architecture
 
-```
-                         ┌─────────────────────────────────────────────────────┐
-                         │                      OneLake                        │
-                         └─────────────────────────────────────────────────────┘
-   Connect        Ingest & Process      Analyse & Transform      Visualize & Act      Interact
-┌──────────┐    ┌─────────────┐        ┌────────────────┐      ┌──────────────┐    ┌──────────┐
-│ ADLS Gen2│───▶│  Pipeline   │───────▶│   Eventhouse   │─────▶│  Power BI    │───▶│Activator │──▶ Teams
-│  (CSV)   │    │ (event-trig)│        │   (KQL DB)     │      │  (+ RTD opt.)│    │          │
-└──────────┘    └─────────────┘        └────────────────┘      └──────────────┘    └──────────┘
-```
+![Target architecture — ADLS Gen2 → Pipeline → Eventhouse → Power BI / Activator → MS Teams, all on OneLake](images/Target%20Architecture.png)
+
+**Flow** — `Connect` (ADLS Gen2) → `Ingest & Process` (Fabric Data Pipeline, event-triggered) → `Analyse & Transform` (Eventhouse / KQL DB) → `Visualize & Act` (Power BI report + Activator) → `Get assisted & Interact` (MS Teams). All Fabric items are backed by **OneLake**.
 
 Key design principles:
 
