@@ -188,7 +188,7 @@ This stored procedure is the **engine behind the Gold table**. Rather than re-ag
 
 ```
 New CSV file arrives
-  └─► Pipeline ingests into DepositMovement (Silver)
+  └─► Pipeline ingests into DepositMovement (Bronze)
        └─► Pipeline calls this stored procedure
             └─► Procedure finds which dates were just loaded (last 15 min)
                  └─► Re-aggregates ONLY those dates into Summary_Alert_Channel (Gold)
@@ -198,21 +198,118 @@ New CSV file arrives
 - As data grows, a full re-aggregation would scan millions of rows every 30 minutes
 - Incremental recalculation touches only the affected dates, keeping execution fast and resource-efficient
 
-**How it works step by step:**
+### Step-by-step walkthrough
 
-1. **Find recent dates** — Queries `DepositMovement` for records with `IngestedAtUtc >= ago(15m)` and extracts the distinct `Date` values
-2. **Aggregate by Channel** — For each of those dates, sums up `Credit_Amount`, `Debit_Amount`, `Net_Amount`, and `Total_Txn` grouped by `Date` + `Channel`
-3. **Upsert into Gold** — Inserts (or updates) the aggregated rows into `Summary_Alert_Channel` with a fresh `UpdatedAtUtc` timestamp
+#### Step 1 — Identify which dates need recalculation
 
-Run in the KQL Database → **Query** pane:
+```kql
+let RecentDates = DepositMovement
+    | where IngestedAtUtc >= ago(15m)
+    | distinct Date;
+```
+
+| Part | What it does |
+|---|---|
+| `let RecentDates =` | Stores the result as a reusable variable |
+| `where IngestedAtUtc >= ago(15m)` | Filters to rows ingested in the **last 15 minutes** — this catches the batch that just landed |
+| `distinct Date` | Extracts the unique business dates from those rows |
+
+**Example:** If the pipeline just ingested a file containing rows for `2026-04-24` and `2026-04-25`, `RecentDates` will contain exactly those two dates.
+
+**Why 15 minutes?** The pipeline runs every 10–30 minutes. A 15-minute window provides enough buffer to capture the current batch without picking up stale data from much earlier runs.
+
+#### Step 2 — Re-aggregate only those dates
+
+```kql
+RecentDates
+| join kind=inner DepositMovement on Date
+```
+
+| Part | What it does |
+|---|---|
+| `join kind=inner` | Joins `RecentDates` back to the **full** `DepositMovement` table |
+| `on Date` | Match condition — only rows whose `Date` is in the recent batch |
+
+**Why join back to the full table?** Because we want to re-aggregate **all rows for those dates** (not just the new rows). If `2026-04-24` already had data from earlier time slots and we just added `08:00-08:30`, the summary should reflect the entire day so far.
+
+#### Step 3 — Aggregate by Date + Channel
+
+```kql
+| summarize 
+    Credit_Total = sum(Credit_Amount),
+    Debit_Total = sum(Debit_Amount),
+    Net_Amount = sum(Net_Amount),
+    Txn_Count = sum(Total_Txn)
+    by Date, Channel
+```
+
+This collapses all granular rows (per product, per time slot, per transaction type) into **one row per Date + Channel**:
+
+| Before (Bronze — multiple rows) | After (Gold — one row) |
+|---|---|
+| `2026-04-24, ATM, Fixed, On-Us, 00:00-00:30` | `2026-04-24, ATM` → totals |
+| `2026-04-24, ATM, Fixed, Off-Us, 00:00-00:30` | *(merged into above)* |
+| `2026-04-24, ATM, Savings, On-Us, 00:30-01:00` | *(merged into above)* |
+
+#### Step 4 — Add timestamp
+
+```kql
+| extend UpdatedAtUtc = now()
+```
+
+Stamps each aggregated row with the current UTC time, so you can tell **when** the Gold table was last refreshed for that Date + Channel.
+
+#### Step 5 — Upsert into the Gold table
+
+```kql
+| as T
+| getorcreate table Summary_Alert_Channel (Date:datetime, Channel:string, ...)
+| insert into Summary_Alert_Channel (T)
+```
+
+| Part | What it does |
+|---|---|
+| `as T` | Names the result set `T` for reference in the insert |
+| `getorcreate table` | Ensures the target table exists (creates it if not — safety net) |
+| `insert into Summary_Alert_Channel (T)` | Writes the aggregated rows into the Gold table |
+
+> **Note:** This is an **insert**, not an upsert/merge. Each recalculation appends new summary rows. If the same Date + Channel is recalculated multiple times, multiple rows will exist — the latest one (by `UpdatedAtUtc`) is the most current. Downstream queries/reports should filter by the latest `UpdatedAtUtc` per Date + Channel, or the table should be periodically deduplicated.
+
+### Visual flow
+
+```
+Pipeline ingests mock_0800_0830.csv (contains Date = 2026-04-24)
+  │
+  ▼
+Step 1: RecentDates = [2026-04-24]
+  │
+  ▼
+Step 2: Join back → get ALL rows for 2026-04-24 (00:00 through 08:30)
+  │
+  ▼
+Step 3: Summarize → one row per Channel (ATM, BCMS, ENET, ...)
+  │
+  ▼
+Step 4: Stamp UpdatedAtUtc = 2026-04-24T08:31:00Z
+  │
+  ▼
+Step 5: Insert into Summary_Alert_Channel (Gold)
+```
+
+### Design rationale
+
+| Concern | How it's handled |
+|---|---|
+| **Performance** | Only recalculates affected dates, not the entire history |
+| **Correctness** | Re-aggregates the full day (not just new rows), so totals are always accurate |
+| **Simplicity** | Single procedure, called once per pipeline run |
+| **Freshness tracking** | `UpdatedAtUtc` lets Power BI / Activator know when data was last refreshed |
+
+### Run the script
+
+Open the KQL Database → **Query** pane and run:
 
 - [kql/04-sp-Recalculate-Summary_Alert_Channel.kql](kql/04-sp-Recalculate-Summary_Alert_Channel.kql)
-
-**Logic:**
-
-1. Find distinct dates from records ingested in the **last 15 minutes** (`IngestedAtUtc >= ago(15m)`)
-2. For each of those dates, aggregate `DepositMovement` by `Channel`
-3. Upsert the result into `Summary_Alert_Channel` (Gold table)
 
 **Test manually:**
 
