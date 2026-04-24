@@ -108,15 +108,21 @@ This stored function is the **engine behind the Gold table**. Rather than re-agg
 
 ```
 New CSV file arrives
-  └─► Pipeline ingests into DepositMovement (Bronze)
-       └─► Pipeline calls .set-or-append with this function
-            └─► Function finds which dates were just loaded (last 15 min)
-                 └─► Re-aggregates ONLY those dates → appended to Summary_Alert_Channel (Gold)
+  └─► Pipeline captures vLoadTs = @utcNow()
+       └─► Pipeline ingests into DepositMovement (Bronze) with load_ts = vLoadTs
+            └─► Pipeline calls .set-or-append with this function, passing vLoadTs
+                 └─► Function finds which dates have load_ts = vLoadTs
+                      └─► Re-aggregates ONLY those dates → appended to Summary_Alert_Channel (Gold)
 ```
 
 **Why incremental?**
 - As data grows, a full re-aggregation would scan millions of rows every 30 minutes
 - Incremental recalculation touches only the affected dates, keeping execution fast and resource-efficient
+
+**Why parameterized?**
+- The pipeline passes the exact `load_ts` it stamped on the ingested rows — no guessing with time windows like `ago(15m)`
+- Works regardless of pipeline schedule (every 10 min, hourly, or on-demand)
+- Eliminates the risk of missing data if the pipeline runs slower than expected
 
 ### Step-by-step walkthrough
 
@@ -124,19 +130,20 @@ New CSV file arrives
 
 ```kql
 let RecentDates = DepositMovement
-    | where load_ts >= ago(15m)
+    | where load_ts == pipeline_load_ts
     | distinct Date;
 ```
 
 | Part | What it does |
 |---|---|
+| `pipeline_load_ts` | Function parameter — the exact timestamp the pipeline stamped on the rows during ingestion |
 | `let RecentDates =` | Stores the result as a reusable variable |
-| `where load_ts >= ago(15m)` | Filters to rows whose `load_ts` (pipeline injection timestamp) is within the **last 15 minutes** — this catches the batch that just landed |
+| `where load_ts == pipeline_load_ts` | Filters to rows whose `load_ts` matches the pipeline's timestamp exactly — pinpoints the batch that just landed |
 | `distinct Date` | Extracts the unique business dates from those rows |
 
-**Example:** If the pipeline just ingested a file containing rows for `2026-04-24` and `2026-04-25`, `RecentDates` will contain exactly those two dates.
+**Example:** If the pipeline just ingested a file containing rows for `2026-04-24` and `2026-04-25` with `load_ts = 2026-04-24T08:31:00Z`, `RecentDates` will contain exactly those two dates.
 
-**Why 15 minutes?** The pipeline runs every 10–30 minutes. A 15-minute window provides enough buffer to capture the current batch without picking up stale data from much earlier runs.
+**Why exact match instead of `ago(15m)`?** The pipeline passes the same `@utcNow()` value it used as `load_ts` during ingestion. This makes the function **schedule-independent** — it works whether the pipeline runs every 10 minutes, every hour, or on-demand. No risk of missing data if the pipeline runs slower than expected.
 
 #### Step 2 — Re-aggregate only those dates
 
@@ -186,7 +193,7 @@ Stamps each aggregated row with the current UTC time, so you can tell **when** t
 The function alone **returns** the aggregated rows but does not write them. To append the results into the Gold table:
 
 ```kusto
-.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(2026-04-24T08:31:00Z))
 ```
 
 | Part | What it does |
@@ -194,17 +201,29 @@ The function alone **returns** the aggregated rows but does not write them. To a
 | `.set-or-append` | Management command that writes a query's result set into a table (creates it if it doesn't exist) |
 | `Summary_Alert_Channel` | Target Gold table |
 | `<\|` | "Pipe from query" operator — feeds the function's output into the write command |
-| `sp_Recalculate_Summary_Alert_Channel()` | The function call — returns the aggregated rows |
+| `sp_Recalculate_Summary_Alert_Channel(...)` | The function call with the pipeline's `load_ts` timestamp — returns the aggregated rows |
+
+In the Data Pipeline (Workshop 04), the KQL Activity passes the pipeline variable:
+
+```kusto
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(@{variables('vLoadTs')}))
+```
 
 > **Note:** This is an **append**, not an upsert/merge. Each recalculation appends new summary rows. If the same Date + Channel is recalculated multiple times, multiple rows will exist — the latest one (by `UpdatedAtUtc`) is the most current. Downstream queries/reports should filter by the latest `UpdatedAtUtc` per Date + Channel, or the table should be periodically deduplicated.
 
 ### Visual flow
 
 ```
-Pipeline ingests mock_0800_0830.csv (contains Date = 2026-04-24)
+Pipeline sets vLoadTs = 2026-04-24T08:31:00Z
   │
   ▼
-Step 1: RecentDates = [2026-04-24]
+Pipeline ingests mock_0800_0830.csv with load_ts = vLoadTs
+  │
+  ▼
+Pipeline calls sp_Recalculate_Summary_Alert_Channel(vLoadTs)
+  │
+  ▼
+Step 1: RecentDates = rows where load_ts == vLoadTs → distinct Date = [2026-04-24]
   │
   ▼
 Step 2: Join back → get ALL rows for 2026-04-24 (00:00 through 08:30)
@@ -226,8 +245,9 @@ Function returns result set → .set-or-append writes to Summary_Alert_Channel (
 | **Performance** | Only recalculates affected dates, not the entire history |
 | **Correctness** | Re-aggregates the full day (not just new rows), so totals are always accurate |
 | **Simplicity** | Single function, called once per pipeline run via `.set-or-append` |
-| **Testability** | Call `sp_Recalculate_Summary_Alert_Channel()` alone to preview results without writing |
+| **Testability** | Call `sp_Recalculate_Summary_Alert_Channel(load_ts)` alone to preview results without writing |
 | **Freshness tracking** | `UpdatedAtUtc` lets Power BI / Activator know when data was last refreshed |
+| **Schedule-independent** | Works with any pipeline frequency — no hardcoded time window |
 
 ### Run the script
 
@@ -235,14 +255,17 @@ Open the KQL Database → **Query** pane and run:
 
 - [kql/04-sp-Recalculate-Summary_Alert_Channel.kql](kql/04-sp-Recalculate-Summary_Alert_Channel.kql)
 
-**Test manually:**
+**Test manually** (replace the datetime with an actual `load_ts` from your data):
 
 ```kusto
+// Find a load_ts to test with
+DepositMovement | summarize by load_ts | order by load_ts desc | limit 5
+
 // Preview what would be inserted (no write)
-sp_Recalculate_Summary_Alert_Channel()
+sp_Recalculate_Summary_Alert_Channel(datetime(2026-04-24T08:31:00Z))
 
 // Actually append into the Gold table
-.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(2026-04-24T08:31:00Z))
 
 // Check results
 Summary_Alert_Channel | order by Date desc, Channel | limit 20

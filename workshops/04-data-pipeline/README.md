@@ -25,9 +25,18 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
 | `pFileName` | String | *(empty — used for manual runs)* |
 | `pFolder` | String | `incoming` |
 
+### Pipeline variables
+
+| Name | Type | Purpose |
+|---|---|---|
+| `vLoadTs` | String | Captures `@utcNow()` once per run — used as `load_ts` in the Copy activity and passed to the Gold recalculation function |
+
 ## 4.4 Activity flow
 
 ```
+[Set vLoadTs]
+      │
+      ▼
 [Get Metadata]
       │
       ▼
@@ -41,6 +50,14 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
       │                   └────────────────▶ [Recalculate Gold Summary]      │
       └─ False →  [Append Skipped-Duplicate audit]
 ```
+
+### 4.4.0 `Set vLoadTs` — capture timestamp for the run
+
+- **Activity type:** Set Variable
+- **Variable:** `vLoadTs`
+- **Value:** `@utcNow()`
+
+This captures a single timestamp at the start of the pipeline run. The same value is used as `load_ts` in the Copy activity (so all rows get the same timestamp) and passed to the Gold recalculation function (so it finds exactly those rows).
 
 ### 4.4.1 `Get Metadata` — verify file landed
 
@@ -76,7 +93,7 @@ Expression: `@empty(activity('Lookup ProcessedFiles').output.firstRow)`
 - **Additional columns** (projected at source):
   | Name | Value |
   |---|---|
-  | `load_ts` | `@utcNow()` |
+  | `load_ts` | `@variables('vLoadTs')` |
   | `file_name` | `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
   | `pipeline_name` | `@pipeline().Pipeline` |
   | `pipeline_runid` | `@pipeline().RunId` |
@@ -149,10 +166,12 @@ After the audit row is written, call the stored function to recalculate **only**
 - **Script:**
 
 ```kusto
-.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(@{variables('vLoadTs')}))
 ```
 
-> This calls the stored function created in Workshop 03 (Option A). It finds distinct dates from records ingested in the last 15 minutes, re-aggregates only those dates, and appends the results into the `Summary_Alert_Channel` Gold table.
+> This calls the stored function created in Workshop 03 (Option A), passing the exact `load_ts` timestamp that was stamped on the ingested rows. The function finds distinct dates from those rows, re-aggregates only those dates, and appends the results into the `Summary_Alert_Channel` Gold table.
+>
+> Because the pipeline passes the exact timestamp (not a time window like `ago(15m)`), this works regardless of pipeline schedule — every 10 minutes, hourly, or on-demand.
 >
 > If you chose **Option B** (materialized view) in Workshop 03, skip this activity entirely — the KQL engine handles it automatically.
 
