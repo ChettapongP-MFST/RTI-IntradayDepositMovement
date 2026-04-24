@@ -443,3 +443,42 @@ Click **← Back** to return to the main canvas.
 ### Reference
 
 A reference `pipeline.json` export is stored in [`pipeline/pl_ingest_DepositMovement.json`](pipeline/pl_ingest_DepositMovement.json) once you export it from Fabric (File → Export → Pipeline JSON).
+
+---
+
+## Appendix A — Why `@utcNow()` and not Thailand time?
+
+`@utcNow()` returns **UTC** (Coordinated Universal Time), which is **Thailand time − 7 hours**.
+
+| Time zone | Example |
+|---|---|
+| **UTC** (`@utcNow()`) | `2026-04-25T10:00:00Z` |
+| **Thailand** (ICT, UTC+7) | `2026-04-25T17:00:00` |
+
+You *could* use `@addHours(utcNow(), 7)` to store Thailand time, but **don't** — here's why:
+
+| Concern | `@utcNow()` (UTC) ✅ | `@addHours(utcNow(), 7)` (Thailand) ❌ |
+|---|---|---|
+| **KQL `datetime` functions** | Work correctly — KQL assumes UTC | **Wrong** — KQL treats the value as UTC, so `bin(load_ts, 1d)` groups by Thailand midnight but KQL thinks it's UTC midnight |
+| **`ago(1h)` in KQL queries** | Correct | **Off by 7 hours** — KQL compares against real UTC `now()` |
+| **Cross-system joins** | Matches other Fabric timestamps | **Mismatches** — Fabric internals (pipeline start time, audit logs) are all UTC |
+| **Power BI time intelligence** | Easy to shift for display | Already shifted — risk of **double-shift** if someone adds +7 again in DAX |
+
+### Best practice: store UTC, display local
+
+Keep the pipeline as-is (`@utcNow()`). In your **Power BI report**, convert to Thailand time at the presentation layer:
+
+**DAX calculated column:**
+
+```dax
+ThailandTime = [load_ts] + TIME(7, 0, 0)
+```
+
+**KQL query (ad-hoc):**
+
+```kusto
+DepositMovement
+| extend ThailandTime = load_ts + 7h
+```
+
+This way your data is clean and correct everywhere, and Thailand time is shown only where humans read it.
