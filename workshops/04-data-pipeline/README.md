@@ -99,7 +99,7 @@ Captures a single UTC timestamp for the entire pipeline run.
 |---|---|
 | Variable type | Pipeline variable |
 | Name | `vLoadTs` |
-| Value | Click the text box → click **Add dynamic content** (or press `Shift+@`) → type: `@utcNow()` → **OK** |
+| Value | Click the text box → click **Add dynamic content** (or press `Alt+Shift+D`) → type: `@utcNow()` → **OK** |
 
 ---
 
