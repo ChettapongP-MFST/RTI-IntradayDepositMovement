@@ -156,7 +156,7 @@ In the KQL Database query pane:
 This is the **aggregated "Gold" layer** in a Medallion Architecture pattern:
 
 ```
-Bronze (raw CSV) ──► Silver (DepositMovement table) ──► Gold (Summary_Alert_Channel)
+Bronze (DepositMovement table) ──► Stored Procedure / Policy ──► Gold (Summary_Alert_Channel)
 ```
 
 While `DepositMovement` stores **granular, row-level data** (per product, per channel, per time slot), this Gold table stores **daily channel-level summaries** — pre-aggregated for:
