@@ -99,11 +99,6 @@ Today ◄─── 90 days ───► Hot cache (fast queries)
 
 > 💡 **Tune to your needs** — for a workshop/POC, these defaults work well. In production, adjust based on query patterns and cost requirements.
 
----
-
-Now open the KQL Database → **Query** pane and **run the full script** [kql/01-create-DepositMovement.kql](kql/01-create-DepositMovement.kql).
-
-## 2.3 Create the Fabric Warehouse
 
 1. Fabric workspace → **+ New item** → **Warehouse** → name it `wh_control_framework` → **Create**.
 2. Once provisioned, open the Warehouse and click **New SQL query**.
