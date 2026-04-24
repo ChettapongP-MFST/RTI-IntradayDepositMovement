@@ -33,7 +33,7 @@ Schema:
 
 ## 2.3 Create the Fabric Warehouse
 
-1. Fabric workspace → **+ New item** → **Warehouse** → name it `wh_rti_control` → **Create**.
+1. Fabric workspace → **+ New item** → **Warehouse** → name it `wh_control_framework` → **Create**.
 2. Once provisioned, open the Warehouse and click **New SQL query**.
 
 ## 2.4 Create the audit/control table (T-SQL)
@@ -121,7 +121,7 @@ Summary_Alert_Channel | order by Date desc, Channel | limit 20
 
 - [ ] Eventhouse + KQL Database `DepositMovement` exist, with the 16-column `DepositMovement` table + `DepositMovement_mapping`
 - [ ] Streaming ingestion enabled on `DepositMovement`
-- [ ] Warehouse `wh_rti_control` exists
+- [ ] Warehouse `wh_control_framework` exists
 - [ ] Table `dbo.ProcessedFiles` exists with 8 columns; empty `SELECT` returns no rows
 - [ ] Gold table `Summary_Alert_Channel` exists with 7 columns
 - [ ] Stored procedure `sp_Recalculate_Summary_Alert_Channel` exists

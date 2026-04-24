@@ -21,7 +21,7 @@ Finalize the solution: run end-to-end validation, set up monitoring, apply house
 | Pipeline runs | Fabric **Monitor hub** → Pipeline runs |
 | Trigger (Reflex) | Workspace list → Reflex item → Run history |
 | Ingestion health | KQL: `.show ingestion failures` / `.show commands-and-queries` |
-| Audit | `wh_rti_control.dbo.ProcessedFiles` (Warehouse, T-SQL) + Power BI "Data freshness" page |
+| Audit | `wh_control_framework.dbo.ProcessedFiles` (Warehouse, T-SQL) + Power BI "Data freshness" page |
 | Storage event delivery | Storage Account → **Events** → Event Subscriptions → Metrics |
 
 ## 9.3 Housekeeping (Portal)

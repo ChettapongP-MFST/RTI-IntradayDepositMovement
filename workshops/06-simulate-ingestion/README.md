@@ -39,7 +39,7 @@ If you prefer the classic UI: Storage account → **Containers** → `intraday-d
 ## 6.3 Monitor during replay
 
 - **Fabric Portal → Monitor hub → Pipeline runs** — one row per file, updates live.
-- In the Fabric Warehouse `wh_rti_control`, run this T-SQL query to confirm:
+- In the Fabric Warehouse `wh_control_framework`, run this T-SQL query to confirm:
   ```sql
   SELECT Status, COUNT(*) AS Files, SUM(RowCount_) AS Rows_
   FROM dbo.ProcessedFiles

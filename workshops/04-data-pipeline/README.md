@@ -1,6 +1,6 @@
 # Workshop 04 — Data Pipeline (Hardened & Idempotent)
 
-Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `DepositMovement`, with duplicate protection and full audit written to the **Warehouse** table `wh_rti_control.dbo.ProcessedFiles`.
+Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `DepositMovement`, with duplicate protection and full audit written to the **Warehouse** table `wh_control_framework.dbo.ProcessedFiles`.
 
 **Prerequisite:** [Workshop 03](../03-trusted-workspace-access/) complete
 **Next:** [Workshop 05 — Event Trigger](../05-event-trigger/)
@@ -54,7 +54,7 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
 
 ### 4.4.2 `Lookup ProcessedFiles` — dedup check
 
-- Source: **Warehouse** `wh_rti_control` via workspace identity (Fabric-native connection picker: **+ New** → **Warehouse** → select `wh_rti_control`).
+- Source: **Warehouse** `wh_control_framework` via workspace identity (Fabric-native connection picker: **+ New** → **Warehouse** → select `wh_rti_control`).
 - Query (T-SQL):
   ```sql
   SELECT TOP (1) FileName
@@ -86,7 +86,7 @@ Expression: `@empty(activity('Lookup ProcessedFiles').output.firstRow)`
   - `ingestIfNotExists = ["FileName"]`  *(server-side dedup safety net)*
 - Retry: 3 × 60 s.
 
-**b) `Append Success` (Script activity → Warehouse `wh_rti_control`, on Copy Success):**
+**b) `Append Success` (Script activity → Warehouse `wh_control_framework`, on Copy Success):**
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -139,7 +139,7 @@ VALUES (
 );
 ```
 
-> 💡 Use the Fabric **Script** activity (not **Stored procedure**) and point it at the `wh_rti_control` Warehouse connection. Each audit branch is a single statement so there's no transaction concern.
+> 💡 Use the Fabric **Script** activity (not **Stored procedure**) and point it at the `wh_control_framework` Warehouse connection. Each audit branch is a single statement so there's no transaction concern.
 
 ### 4.4.4 `Recalculate Gold Summary` (Script activity → KQL Database)
 

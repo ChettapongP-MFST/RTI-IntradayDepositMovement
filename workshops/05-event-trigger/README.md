@@ -49,6 +49,6 @@ Trigger name (Reflex item): `tg_blobcreated_deposit`. Select **Create**.
 
 - [ ] Eventstream + Reflex trigger exist in workspace
 - [ ] Trigger fires on `.csv` landing in `incoming/`
-- [ ] Pipeline completes with 1 `Success` row in `wh_rti_control.dbo.ProcessedFiles`
+- [ ] Pipeline completes with 1 `Success` row in `wh_control_framework.dbo.ProcessedFiles`
 
 → Proceed to **[Workshop 06 — Simulate Ingestion](../06-simulate-ingestion/)**

@@ -1,5 +1,5 @@
 -- Workshop 02 — Create ProcessedFiles audit/control table
--- Target: Fabric Warehouse "wh_rti_control"
+-- Target: Fabric Warehouse "wh_control_framework"
 -- Run in the Warehouse SQL query editor
 
 IF OBJECT_ID('dbo.ProcessedFiles', 'U') IS NULL

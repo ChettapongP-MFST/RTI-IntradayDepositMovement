@@ -201,7 +201,7 @@ The **balanced hybrid**: once Pattern B is running, turn on OneLake availability
 | Measures | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
 | Lineage | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
 
-**`wh_rti_control.dbo.ProcessedFiles`** (audit/control table, Fabric Warehouse, 8 columns):
+**`wh_control_framework.dbo.ProcessedFiles`** (audit/control table, Fabric Warehouse, 8 columns):
 
 `FileName`, `IngestedAtUtc`, `RowCount_`, `Status` (Success / Failed / Skipped-Duplicate), `PipelineName`, `PipelineRunId`, `RunAsUser`, `ErrorMsg`
 
