@@ -37,8 +37,8 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
 [If Condition: @empty(Lookup.output.firstRow)]
       │
       ├─ True  →  [Copy CSV to Eventhouse]  ──success──▶ [Append Success audit]
-      │                                     ──failure──▶ [Append Failed audit]
-      │
+      │                                     ──failure──▶ [Append Failed audit]      │                   │
+      │                   └────────────────▶ [Recalculate Gold Summary]      │
       └─ False →  [Append Skipped-Duplicate audit]
 ```
 
@@ -141,6 +141,19 @@ VALUES (
 
 > 💡 Use the Fabric **Script** activity (not **Stored procedure**) and point it at the `wh_rti_control` Warehouse connection. Each audit branch is a single statement so there's no transaction concern.
 
+### 4.4.4 `Recalculate Gold Summary` (Script activity → KQL Database)
+
+After the audit row is written, call the stored procedure to recalculate **only** the dates present in the newly ingested file.
+
+- **Connection:** KQL Database `DepositMovement` (via workspace identity)
+- **Script:**
+
+```kusto
+exec sp_Recalculate_Summary_Alert_Channel
+```
+
+> This runs the stored procedure created in Workshop 02.7. It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
+
 ## 4.5 Save and test manually
 
 1. Upload one CSV (e.g. `mock_0000_0030.csv`) to `intraday-deposits/incoming/` (using the temporarily-allow-listed IP from Workshop 01.4).
@@ -148,6 +161,7 @@ VALUES (
 3. Verify:
    - `DepositMovement` (KQL) has new rows with the 4 lineage columns populated — `DepositMovement | count`.
    - `dbo.ProcessedFiles` (Warehouse) has **1** `Success` row — `SELECT TOP (5) * FROM dbo.ProcessedFiles ORDER BY IngestedAtUtc DESC;`.
+   - `Summary_Alert_Channel` (KQL Gold) has aggregated data — `Summary_Alert_Channel | count`.
 4. Re-run the same pipeline — verify **no new data rows**, just a new `Skipped-Duplicate` audit row.
 
 ## ✅ Exit Criteria
@@ -155,6 +169,7 @@ VALUES (
 - [ ] Pipeline succeeds end-to-end
 - [ ] Idempotency proven (re-run = Skipped-Duplicate)
 - [ ] Failure path tested (missing file = Failed audit row with `ErrorMsg`)
+- [ ] Gold table `Summary_Alert_Channel` updated after each successful ingestion
 
 → Proceed to **[Workshop 05 — Event Trigger](../05-event-trigger/)**
 

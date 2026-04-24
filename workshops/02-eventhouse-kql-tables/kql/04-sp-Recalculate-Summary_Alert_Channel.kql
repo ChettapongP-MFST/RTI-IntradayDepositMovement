@@ -1,0 +1,30 @@
+// Workshop 02 — Stored Procedure: Recalculate Summary_Alert_Channel (Gold)
+// Run in the KQL Database "DepositMovement"
+// Purpose: After new data lands in DepositMovement, recalculate ONLY the dates present in the new batch
+
+.create procedure sp_Recalculate_Summary_Alert_Channel()
+{
+    // Step 1: Find distinct dates from the most recent ingestion (last 15 minutes)
+    // This ensures we only recalculate dates that were just added/updated
+    let RecentDates = DepositMovement
+        | where IngestedAtUtc >= ago(15m)
+        | distinct Date;
+
+    // Step 2: For each date in the recent batch, aggregate by Channel
+    // Then upsert (getorcreate + insert) into the Gold table
+    RecentDates
+    | join kind=inner DepositMovement on Date
+    | summarize 
+        Credit_Total = sum(Credit_Amount),
+        Debit_Total = sum(Debit_Amount),
+        Net_Amount = sum(Net_Amount),
+        Txn_Count = sum(Total_Txn)
+        by Date, Channel
+    | extend UpdatedAtUtc = now()
+    | as T
+    | getorcreate table Summary_Alert_Channel (Date:datetime, Channel:string, Credit_Total:real, Debit_Total:real, Net_Amount:real, Txn_Count:long, UpdatedAtUtc:datetime)
+    | insert into Summary_Alert_Channel (T)
+}
+
+// Verify the procedure exists
+.show procedures sp_Recalculate_Summary_Alert_Channel

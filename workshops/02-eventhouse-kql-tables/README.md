@@ -73,11 +73,57 @@ In the KQL Database query pane:
 
 (Warehouses don't have a streaming-ingestion policy — writes via pipeline `Script` / `Stored procedure` activity are sufficient for a per-file audit row.)
 
+## 2.6 Create the Gold table (Summary_Alert_Channel)
+
+This is the **aggregated target table** that stores daily channel-level summaries. It will be updated incrementally by the stored procedure below.
+
+Run in the KQL Database → **Query** pane:
+
+- [kql/03-create-Summary_Alert_Channel.kql](kql/03-create-Summary_Alert_Channel.kql)
+
+Schema:
+
+| Column | Type | Purpose |
+|---|---|---|
+| `Date` | datetime | Business date (e.g., 2026-04-24) |
+| `Channel` | string | Channel dimension |
+| `Credit_Total` | real | Sum of Credit_Amount for that date+channel |
+| `Debit_Total` | real | Sum of Debit_Amount for that date+channel |
+| `Net_Amount` | real | Net (Credit - Debit) |
+| `Txn_Count` | real | Count of transactions |
+| `UpdatedAtUtc` | datetime | When the summary was last recalculated |
+
+## 2.7 Create the Stored Procedure (Incremental Recalculation)
+
+This stored procedure recalculates **only the dates present in the newly ingested data**. For example, if the new file contains records for dates 20260424 and 20260423, only those two dates will be aggregated and upserted into the Gold table.
+
+Run in the KQL Database → **Query** pane:
+
+- [kql/04-sp-Recalculate-Summary_Alert_Channel.kql](kql/04-sp-Recalculate-Summary_Alert_Channel.kql)
+
+**Logic:**
+
+1. Find distinct dates from records ingested in the **last 15 minutes** (`IngestedAtUtc >= ago(15m)`)
+2. For each of those dates, aggregate `DepositMovement` by `Channel`
+3. Upsert the result into `Summary_Alert_Channel` (Gold table)
+
+**Test manually:**
+
+```kusto
+// Run the procedure
+exec sp_Recalculate_Summary_Alert_Channel;
+
+// Check results
+Summary_Alert_Channel | order by Date desc, Channel | limit 20
+```
+
 ## ✅ Exit Criteria
 
 - [ ] Eventhouse + KQL Database `DepositMovement` exist, with the 16-column `DepositMovement` table + `DepositMovement_mapping`
 - [ ] Streaming ingestion enabled on `DepositMovement`
 - [ ] Warehouse `wh_rti_control` exists
 - [ ] Table `dbo.ProcessedFiles` exists with 8 columns; empty `SELECT` returns no rows
+- [ ] Gold table `Summary_Alert_Channel` exists with 7 columns
+- [ ] Stored procedure `sp_Recalculate_Summary_Alert_Channel` exists
 
 → Proceed to **[Workshop 03 — Trusted Workspace Access](../03-trusted-workspace-access/)**
