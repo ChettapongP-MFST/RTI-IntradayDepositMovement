@@ -6,19 +6,22 @@ Create the **Gold aggregation layer** — a pre-aggregated summary table that st
 Bronze (DepositMovement table) ──► Stored Procedure / Materialized View ──► Gold (Summary_Alert_Channel)
 ```
 
-There are **two options** to build this. Choose one:
+There are **three options** to build this. Choose one:
 
-| | Option A — Stored Function | Option B — Materialized View |
-|---|---|---|
-| **Mechanism** | Pipeline calls `.set-or-append` with a stored function after each ingestion | KQL engine auto-aggregates as new data arrives |
-| **Trigger** | Explicit — pipeline must call `.set-or-append <| sp_...()` | Automatic — runs in the background, no pipeline step needed |
-| **Pipeline change** | Requires a "KQL Activity" step in the pipeline (Workshop 04) | No pipeline change needed |
-| **Latency** | Seconds after pipeline calls the function | Near-real-time (KQL processes new extents automatically) |
-| **Custom logic** | Full KQL flexibility (windowing, filtering, complex joins) | Limited to `summarize` aggregation functions |
-| **Ops overhead** | Must ensure pipeline calls the function on every run | Zero — KQL manages it autonomously |
-| **Best for** | Complex transformation logic, conditional recalculation | Simple aggregations that should always stay up to date |
+| | Option A — Stored Function | Option B — Materialized View (minimal) | Option C — Materialized View (full schema) |
+|---|---|---|---|
+| **Mechanism** | Pipeline calls `.set-or-append` with a stored function | KQL auto-aggregates as new data arrives | KQL auto-aggregates as new data arrives |
+| **Gold table name** | `Summary_Alert_Channel` (regular table) | `Summary_Alert_Channel_MV` (view) | `Summary_Alert_Channel` (view) |
+| **Schema** | 7 columns (incl. `UpdatedAtUtc`) | 6 columns (no `UpdatedAtUtc`) | 7 columns (incl. `UpdatedAtUtc` via `max(load_ts)`) |
+| **Trigger** | Explicit — pipeline must call `.set-or-append <\| sp_...()` | Automatic | Automatic |
+| **Pipeline change** | Requires a "KQL Activity" step (Workshop 04) | No pipeline change | No pipeline change |
+| **Rows per Date+Channel** | Multiple (appends each run — needs dedup) | Single (auto-merged) | Single (auto-merged) |
+| **Freshness tracking** | `UpdatedAtUtc = now()` — exact recalc time | No — check `.show materialized-view` | `UpdatedAtUtc = max(load_ts)` — latest pipeline load time |
+| **Custom logic** | Full KQL flexibility | Limited to `summarize` | Limited to `summarize` |
+| **Ops overhead** | Must ensure pipeline calls function on every run | Zero | Zero |
+| **Best for** | Complex transformations, explicit control | Minimal schema, simplest setup | Same schema as A, zero-ops like B |
 
-> 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B, you can skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
+> 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B or C, skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
 
 **Prerequisite:** [Workshop 02](../02-eventhouse-kql-tables/) complete (Eventhouse + KQL Database + `DepositMovement` table exist)
 **Next:** [Workshop 04 — Data Pipeline](../04-data-pipeline/)
@@ -311,6 +314,115 @@ To check materialization health and lag:
 
 ---
 
+## Option C — Materialized View (Full Schema with Freshness Tracking)
+
+Option C combines the **zero-ops automation** of Option B with the **full 7-column schema** of Option A — including a freshness timestamp.
+
+The key insight: you can't use `now()` inside a materialized view (each extent would produce a different timestamp, breaking the merge). But you **can** use `max(load_ts)` — the latest pipeline load timestamp for that Date+Channel. This tells downstream reports exactly how fresh the data is.
+
+```
+New CSV file arrives
+  └─► Pipeline ingests into DepositMovement (Bronze)
+       └─► KQL engine detects new extents automatically
+            └─► Materialized view incrementally aggregates new data
+                 └─► Summary_Alert_Channel is always up to date (with UpdatedAtUtc)
+```
+
+### How it differs from Option A and B
+
+| Aspect | Option A | Option B | Option C |
+|---|---|---|---|
+| **Automation** | Manual (pipeline step) | Automatic | Automatic |
+| **`UpdatedAtUtc`** | `now()` — exact recalc time | Not available | `max(load_ts)` — latest load time |
+| **Rows per key** | Multiple (append) | Single | Single |
+| **Gold table name** | `Summary_Alert_Channel` (table) | `Summary_Alert_Channel_MV` (view) | `Summary_Alert_Channel` (view) |
+| **Data processed** | Full re-agg of affected days | Only new extents (additive) | Only new extents (additive) |
+
+### Why `max(load_ts)` instead of `now()`?
+
+| Approach | Works in materialized view? | Why? |
+|---|---|---|
+| `now()` | ❌ No | Each extent is processed at a different time — `now()` would produce different values, preventing proper merge |
+| `max(load_ts)` | ✅ Yes | `load_ts` is a column value (set by the pipeline), and `max()` is a valid aggregation — KQL can merge it correctly |
+
+**What `max(load_ts)` tells you:** "The most recent data contributing to this Date+Channel aggregation was loaded at this time." This is slightly different from Option A's `now()` (which says "the recalculation happened at this time"), but serves the same purpose for freshness tracking.
+
+### 3.C1 Create the Materialized View
+
+> ⚠️ **Important:** This creates a materialized view named `Summary_Alert_Channel` — the **same name** as Option A's regular table. If you already created the Option A table, you must drop it first: `.drop table Summary_Alert_Channel`
+
+Run in the KQL Database → **Query** pane:
+
+- [kql/06-create-Summary_Alert_Channel_OptionC.kql](kql/06-create-Summary_Alert_Channel_OptionC.kql)
+
+The script creates:
+
+```kql
+.create materialized-view with (backfill=true) Summary_Alert_Channel on table DepositMovement
+{
+    DepositMovement
+    | summarize 
+        Credit_Total = sum(Credit_Amount),
+        Debit_Total  = sum(Debit_Amount),
+        Net_Amount   = sum(Net_Amount),
+        Txn_Count    = sum(Total_Txn),
+        UpdatedAtUtc = max(load_ts)
+        by Date, Channel
+}
+```
+
+#### Key parts explained
+
+| Part | What it does |
+|---|---|
+| `.create materialized-view` | Creates a persistent aggregated view managed by KQL |
+| `with (backfill=true)` | Processes all existing data immediately |
+| `Summary_Alert_Channel` | Same name as Option A's table — queryable the same way |
+| `max(load_ts)` | Tracks the most recent pipeline load timestamp per Date+Channel |
+| `summarize ... by Date, Channel` | Same aggregation logic as Options A and B |
+
+#### How the merge works with `max(load_ts)`
+
+```
+Existing state (before 08:00-08:30):
+  Day 5 + ATM → Credit_Total=50,000, UpdatedAtUtc=2026-04-24T07:30:00Z
+
+New extent (08:00-08:30):
+  Day 5 + ATM → sum(Credit_Amount)=15,000, max(load_ts)=2026-04-24T08:30:00Z
+
+After merge:
+  Day 5 + ATM → Credit_Total=65,000, UpdatedAtUtc=2026-04-24T08:30:00Z
+                 (sum adds up)          (max picks the latest)
+```
+
+Both `sum()` and `max()` are **mergeable aggregation functions** — KQL can combine partial results without re-reading old data.
+
+### 3.C2 Query the materialized view
+
+Query it exactly like Option A's table — same name, same columns:
+
+```kusto
+Summary_Alert_Channel
+| order by Date desc, Channel
+| limit 20
+```
+
+To check materialization health:
+
+```kusto
+.show materialized-view Summary_Alert_Channel
+```
+
+### When to choose Option C
+
+- You want the **same schema as Option A** (7 columns including `UpdatedAtUtc`) so downstream reports and Activator alerts don't need changes
+- You want **zero-ops** — no pipeline step to manage
+- You want a **single clean row** per Date+Channel (no deduplication)
+- Your aggregation is straightforward `summarize` (sum, count, min, max, avg)
+- Your data is **append-only** (no deletes or updates to existing rows)
+
+---
+
 ## ✅ Exit Criteria
 
 **If you chose Option A:**
@@ -319,6 +431,10 @@ To check materialization health and lag:
 
 **If you chose Option B:**
 - [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy
+- [ ] `backfill=true` processed existing data (if any)
+
+**If you chose Option C:**
+- [ ] Materialized view `Summary_Alert_Channel` exists and is healthy (7 columns including `UpdatedAtUtc`)
 - [ ] `backfill=true` processed existing data (if any)
 
 → Proceed to **[Workshop 04 — Data Pipeline](../04-data-pipeline/)**
