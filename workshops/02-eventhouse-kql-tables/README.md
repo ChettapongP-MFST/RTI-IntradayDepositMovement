@@ -22,14 +22,86 @@ Open the KQL Database → **Query** pane and run:
 
 - [kql/01-create-DepositMovement.kql](kql/01-create-DepositMovement.kql)
 
-Schema:
+This script does **three things**. Let's walk through each one before you execute.
 
-| Category | Columns |
-|---|---|
-| Grain | `Date`, `Time` |
-| Dimensions | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` |
-| Measures | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
-| Lineage | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
+### 2.2.1 Table creation (16 columns)
+
+The table has 16 columns across four categories:
+
+| Category | Columns | Description |
+|---|---|---|
+| **Grain** | `Date`, `Time` | Business date and 30-minute time slot (e.g., `00:00-00:30`) |
+| **Dimensions** | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` | Slicing attributes for analysis |
+| **Measures** | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` | Numeric values for aggregation |
+| **Lineage** | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` | Metadata injected by the Data Pipeline (not in the source CSV) |
+
+### 2.2.2 CSV ingestion mapping (`DepositMovement_mapping`)
+
+The mapping tells KQL **which CSV column position (ordinal) maps to which table column**. This is necessary because:
+
+- **The source CSV files have only 12 columns**, but the table has 16.
+- **The extra 4 lineage columns** (`load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`) don't exist in the CSV — they are **appended by the Data Pipeline's Copy Activity** (Workshop 04) using "Additional columns".
+- The mapping ensures:
+  - **Ordinals 0–11** → mapped from the CSV file
+  - **Ordinals 12–15** → mapped from the pipeline-injected columns
+
+| Ordinal | Column | Source |
+|---|---|---|
+| 0–11 | `Date` … `Total_Txn` | CSV file content |
+| 12 | `load_ts` | Pipeline expression `utcNow()` |
+| 13 | `file_name` | `$$FILEPATH` (source blob path) |
+| 14 | `pipeline_name` | `@pipeline().Pipeline` |
+| 15 | `pipeline_runid` | `@pipeline().RunId` |
+
+Without this mapping, KQL would auto-infer column positions and types, causing the 4 extra columns to fail silently or land in wrong columns.
+
+The mapping is saved as `'DepositMovement_mapping'` — this name is referenced later in the Copy Activity sink configuration (Workshop 04).
+
+### 2.2.3 Streaming ingestion policy
+
+```
+.alter-merge database DepositMovement policy streamingingestion '{ "IsEnabled": true }'
+.alter table DepositMovement policy streamingingestion enable
+```
+
+By default, KQL uses **batched ingestion** which buffers rows for 1–5 minutes before they become queryable. Enabling **streaming ingestion** makes data available in **seconds**.
+
+| | Batched (default) | Streaming (enabled) |
+|---|---|---|
+| **Latency** | 1–5 minutes | Seconds |
+| **Use case** | Bulk historical loads | Real-time dashboards & alerts |
+
+Two commands are needed because streaming must be enabled at both the **database level** (prerequisite) and the **table level**.
+
+This is critical for the workshop — you want intraday deposit data to appear in Power BI and Activator alerts as soon as each 30-minute file is ingested.
+
+### 2.2.4 Retention & caching policy
+
+```
+.alter table DepositMovement policy retention '{ "SoftDeletePeriod": "365.00:00:00", "Recoverability": "Enabled" }'
+.alter table DepositMovement policy caching hot = 90d
+```
+
+These policies control **how long data lives** and **how fast queries run**:
+
+| Policy | Setting | Effect |
+|---|---|---|
+| **Retention** | `SoftDeletePeriod: 365 days` | Data older than 1 year is auto-deleted. `Recoverability: Enabled` allows recovery within a grace period. |
+| **Caching** | `hot = 90d` | Last 90 days kept in **hot cache** (SSD/RAM) for fast queries. Older data moves to **cold storage** (slower but still queryable). |
+
+**Data lifecycle:**
+
+```
+Today ◄─── 90 days ───► Hot cache (fast queries)
+       ◄── 365 days ──► Cold storage (slower, still accessible)
+       Beyond 365 days → Deleted automatically
+```
+
+> 💡 **Tune to your needs** — for a workshop/POC, these defaults work well. In production, adjust based on query patterns and cost requirements.
+
+---
+
+Now open the KQL Database → **Query** pane and **run the full script** [kql/01-create-DepositMovement.kql](kql/01-create-DepositMovement.kql).
 
 ## 2.3 Create the Fabric Warehouse
 
@@ -37,6 +109,15 @@ Schema:
 2. Once provisioned, open the Warehouse and click **New SQL query**.
 
 ## 2.4 Create the audit/control table (T-SQL)
+
+This table acts as a **deduplication and audit log** for the Data Pipeline. Every time a CSV file is ingested, the pipeline writes a row here recording:
+- **Which file** was processed (`FileName`)
+- **When** it was ingested (`IngestedAtUtc`)
+- **How many rows** were copied (`RowCount_`)
+- **Whether it succeeded or failed** (`Status`)
+- **Pipeline metadata** for traceability
+
+Before ingesting a new file, the pipeline checks this table to see if the file has already been processed — preventing duplicate loads. If a run fails, the error message is captured in `ErrorMsg` for troubleshooting.
 
 Paste and run the script:
 
@@ -62,7 +143,9 @@ SELECT TOP (1) * FROM dbo.ProcessedFiles;
 SELECT COUNT(*) AS Rows_ FROM dbo.ProcessedFiles;
 ```
 
-## 2.5 Enable streaming ingestion on the KQL table
+## 2.5 Verify streaming ingestion is enabled
+
+After running the script in step 2.2, streaming ingestion should already be enabled. Use these commands to **confirm** it was applied correctly:
 
 In the KQL Database query pane:
 
@@ -75,7 +158,18 @@ In the KQL Database query pane:
 
 ## 2.6 Create the Gold table (Summary_Alert_Channel)
 
-This is the **aggregated target table** that stores daily channel-level summaries. It will be updated incrementally by the stored procedure below.
+This is the **aggregated "Gold" layer** in a Medallion Architecture pattern:
+
+```
+Bronze (raw CSV) ──► Silver (DepositMovement table) ──► Gold (Summary_Alert_Channel)
+```
+
+While `DepositMovement` stores **granular, row-level data** (per product, per channel, per time slot), this Gold table stores **daily channel-level summaries** — pre-aggregated for:
+
+- **Power BI reports** — dashboards query this table instead of scanning millions of raw rows, resulting in faster report load times
+- **Activator alerts** (Workshop 08) — threshold-based alerting on daily net amounts or transaction counts per channel
+
+The table is **not populated during creation** — it will be filled by the stored procedure below (step 2.7), which the Data Pipeline calls after each ingestion.
 
 Run in the KQL Database → **Query** pane:
 
@@ -95,7 +189,25 @@ Schema:
 
 ## 2.7 Create the Stored Procedure (Incremental Recalculation)
 
-This stored procedure recalculates **only the dates present in the newly ingested data**. For example, if the new file contains records for dates 20260424 and 20260423, only those two dates will be aggregated and upserted into the Gold table.
+This stored procedure is the **engine behind the Gold table**. Rather than re-aggregating the entire `DepositMovement` table every time (which would be expensive), it uses an **incremental approach**:
+
+```
+New CSV file arrives
+  └─► Pipeline ingests into DepositMovement (Silver)
+       └─► Pipeline calls this stored procedure
+            └─► Procedure finds which dates were just loaded (last 15 min)
+                 └─► Re-aggregates ONLY those dates into Summary_Alert_Channel (Gold)
+```
+
+**Why incremental?**
+- As data grows, a full re-aggregation would scan millions of rows every 30 minutes
+- Incremental recalculation touches only the affected dates, keeping execution fast and resource-efficient
+
+**How it works step by step:**
+
+1. **Find recent dates** — Queries `DepositMovement` for records with `IngestedAtUtc >= ago(15m)` and extracts the distinct `Date` values
+2. **Aggregate by Channel** — For each of those dates, sums up `Credit_Amount`, `Debit_Amount`, `Net_Amount`, and `Total_Txn` grouped by `Date` + `Channel`
+3. **Upsert into Gold** — Inserts (or updates) the aggregated rows into `Summary_Alert_Channel` with a fresh `UpdatedAtUtc` timestamp
 
 Run in the KQL Database → **Query** pane:
 
