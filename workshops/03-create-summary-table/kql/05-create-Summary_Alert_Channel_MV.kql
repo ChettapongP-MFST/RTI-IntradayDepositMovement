@@ -3,8 +3,9 @@
 // ============================================================
 // Option B: Automatic incremental aggregation via KQL
 // materialized view. Produces the same daily channel-level
-// summaries as the stored procedure (Option A), but KQL
-// manages the incremental processing automatically.
+// summaries as the stored function (Option A), including
+// UpdatedAtUtc via max(load_ts) for freshness tracking.
+// KQL manages the incremental processing automatically.
 //
 // backfill=true  → process all existing data immediately
 // Remove backfill if DepositMovement is empty at creation time.
@@ -17,6 +18,7 @@
         Credit_Total = sum(Credit_Amount),
         Debit_Total  = sum(Debit_Amount),
         Net_Amount   = sum(Net_Amount),
-        Txn_Count    = sum(Total_Txn)
+        Txn_Count    = sum(Total_Txn),
+        UpdatedAtUtc = max(load_ts)
         by Date, Channel
 }
