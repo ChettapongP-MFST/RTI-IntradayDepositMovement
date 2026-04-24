@@ -28,6 +28,7 @@ This workshop series walks through building that solution end-to-end.
 | 00 | [Prerequisites](workshops/00-prerequisites/) | — | Azure / Fabric readiness checklist |
 | 01 | [Provision ADLS Gen2](workshops/01-provision-adls-gen2/) | Azure Storage | Firewall-enabled storage account + container |
 | 02 | [Eventhouse, KQL Table & Warehouse Control](workshops/02-eventhouse-kql-tables/) | Eventhouse / KQL DB + Fabric Warehouse | `DepositMovement` (KQL) + `dbo.ProcessedFiles` (Warehouse) |
+| 02b | [Create the Summary Table](workshops/02b-create-summary-table/) | Eventhouse / KQL DB | `Summary_Alert_Channel` (Gold) — stored procedure or materialized view |
 | 03 | [Trusted Workspace Access](workshops/03-trusted-workspace-access/) | Fabric Security | Workspace identity + resource instance rule |
 | 04 | [Data Pipeline](workshops/04-data-pipeline/) | Data Factory | Hardened, idempotent ingestion pipeline |
 | 05 | [Event Trigger](workshops/05-event-trigger/) | Eventstream + Reflex | `BlobCreated` → pipeline wire-up |
@@ -69,6 +70,8 @@ RTI-IntradayDepositMovement/
 │   ├── 01-provision-adls-gen2/
 │   │   └── scripts/
 │   ├── 02-eventhouse-kql-tables/
+│   │   └── kql/
+│   ├── 02b-create-summary-table/
 │   │   └── kql/
 │   ├── 03-trusted-workspace-access/
 │   │   └── scripts/
