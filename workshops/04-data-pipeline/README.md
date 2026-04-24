@@ -482,3 +482,24 @@ DepositMovement
 ```
 
 This way your data is clean and correct everywhere, and Thailand time is shown only where humans read it.
+
+---
+
+## Appendix B — Parameters vs Variables
+
+| | **Parameters** | **Variables** |
+|---|---|---|
+| **Set by** | Caller (trigger, manual run, parent pipeline) | Activities inside the pipeline (`Set Variable`) |
+| **When** | Before the run starts — **immutable** once running | During the run — **can be updated** multiple times |
+| **Direction** | Input from outside → pipeline | Internal to the pipeline |
+| **Use case** | `pFileName`, `pFolder` — values the trigger passes in | `vLoadTs` — computed at runtime via `@utcNow()` |
+
+**Simple rule:** outside value → **parameter**, pipeline computes it → **variable**.
+
+### In this pipeline
+
+| Name | Type | Why |
+|---|---|---|
+| `pFileName` | Parameter | The event trigger (or manual run) tells the pipeline *which file* to process. Read-only during execution. |
+| `pFolder` | Parameter | The trigger tells the pipeline *which folder* to look in. Defaults to `incoming`. |
+| `vLoadTs` | Variable | The pipeline captures `@utcNow()` at the start via the `Set vLoadTs` activity, then reuses that same timestamp in Copy (`load_ts` column) and KQL (`sp_Recalculate_Summary_Alert_Channel`) — ensuring they always match. |
