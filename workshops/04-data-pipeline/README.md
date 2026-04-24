@@ -9,29 +9,45 @@ Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `
 
 ## 4.1 Create the pipeline
 
-Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_DepositMovement`.
+1. Open your **Fabric workspace**.
+2. Click **+ New item** → search or scroll to **Data pipeline**.
+3. Name: `pl_ingest_DepositMovement` → **Create**.
 
-## 4.2 Create the ADLS Gen2 connection (Workspace Identity)
+You'll land on an empty pipeline canvas.
 
-1. Canvas → **Copy data** → **New connection** → **Azure Data Lake Storage Gen2**.
-2. URL: `https://<STORAGE-ACCOUNT>.dfs.core.windows.net`
-3. Authentication: **Workspace Identity**.
-4. **Test connection** → must succeed. (If it fails, revisit Workshop 00, sections 0.5–0.8.)
+---
 
-## 4.3 Pipeline parameters
+## 4.2 Pipeline parameters & variables
 
-| Name | Type | Default |
+Before building activities, set up the parameters and variables the pipeline will use.
+
+### 4.2.1 Create pipeline parameters
+
+1. Click anywhere on the **canvas background** (not on an activity).
+2. In the bottom pane, click the **Parameters** tab.
+3. Click **+ New** and create two parameters:
+
+| Name | Type | Default Value |
 |---|---|---|
-| `pFileName` | String | *(empty — used for manual runs)* |
+| `pFileName` | String | *(leave empty)* |
 | `pFolder` | String | `incoming` |
 
-### Pipeline variables
+### 4.2.2 Create pipeline variables
 
-| Name | Type | Purpose |
+1. In the same bottom pane, click the **Variables** tab.
+2. Click **+ New** and create one variable:
+
+| Name | Type | Default Value |
 |---|---|---|
-| `vLoadTs` | String | Captures `@utcNow()` once per run — used as `load_ts` in the Copy activity and passed to the Gold recalculation function |
+| `vLoadTs` | String | *(leave empty)* |
 
-## 4.4 Activity flow
+> `vLoadTs` will capture `@utcNow()` at the start of each run. The same timestamp is used as `load_ts` in the Copy activity and passed to the Gold recalculation function — ensuring they always match.
+
+---
+
+## 4.3 Activity flow (overview)
+
+Here's the complete pipeline flow you'll build:
 
 ```
 [Set vLoadTs]
@@ -45,65 +61,238 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
       ▼
 [If Condition: @empty(Lookup.output.firstRow)]
       │
-      ├─ True  →  [Copy CSV to Eventhouse]  ──success──▶ [Append Success audit]
-      │                                     ──failure──▶ [Append Failed audit]      │                   │
-      │                   └────────────────▶ [Recalculate Gold Summary]      │
-      └─ False →  [Append Skipped-Duplicate audit]
+      ├─ True (new file)
+      │     │
+      │     ▼
+      │   [Copy CSV to Eventhouse]
+      │     │
+      │     ├─ On Success → [Append Success audit] → [Recalculate Gold Summary]
+      │     └─ On Failure → [Append Failed audit]
+      │
+      └─ False (duplicate)
+            │
+            ▼
+          [Append Skipped-Duplicate audit]
 ```
 
-### 4.4.0 `Set vLoadTs` — capture timestamp for the run
+---
 
-- **Activity type:** Set Variable
-- **Variable:** `vLoadTs`
-- **Value:** `@utcNow()`
+## 4.4 Build the activities (step-by-step)
 
-This captures a single timestamp at the start of the pipeline run. The same value is used as `load_ts` in the Copy activity (so all rows get the same timestamp) and passed to the Gold recalculation function (so it finds exactly those rows).
+### 4.4.0 Activity: `Set vLoadTs`
 
-### 4.4.1 `Get Metadata` — verify file landed
+Captures a single UTC timestamp for the entire pipeline run.
 
-- **Dataset:** ADLS Gen2 / DelimitedText (no schema).
-- **File path:** container `intraday-deposits`, folder `@pipeline().parameters.pFolder`,
-  file `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)`
-- **Field list:** `exists`, `size`, `lastModified`.
-- **Retry:** 2 × 30 s.
+1. On the canvas, go to the **Activities** tab (top ribbon).
+2. Click **Set variable** (under the "General" group, or search for it).
+3. A "Set variable" activity appears on the canvas.
 
-> On ADLS Gen2 (HNS), `BlobCreated` fires only on `FlushWithClose` (file fully written). Get Metadata is a defensive second check.
+**General tab:**
 
-### 4.4.2 `Lookup ProcessedFiles` — dedup check
+| Setting | Value |
+|---|---|
+| Name | `Set vLoadTs` |
 
-- Source: **Warehouse** `wh_control_framework` via workspace identity (Fabric-native connection picker: **+ New** → **Warehouse** → select `wh_rti_control`).
-- Query (T-SQL):
-  ```sql
-  SELECT TOP (1) FileName
-  FROM dbo.ProcessedFiles
-  WHERE FileName = '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}'
-    AND Status   = 'Success';
-  ```
-- **First row only** ✅.
+**Settings tab:**
 
-### 4.4.3 `If Condition`
+| Setting | Value |
+|---|---|
+| Variable type | Pipeline variable |
+| Name | `vLoadTs` |
+| Value | Click the text box → click **Add dynamic content** (or press `Shift+@`) → type: `@utcNow()` → **OK** |
 
-Expression: `@empty(activity('Lookup ProcessedFiles').output.firstRow)`
+---
 
-#### True branch — load the file
+### 4.4.1 Activity: `Get Metadata`
 
-**a) `Copy CSV to Eventhouse`**
+Verifies the file exists in ADLS Gen2 before attempting ingestion.
 
-- Source: ADLS Gen2 DelimitedText, first row as header.
-- **Additional columns** (projected at source):
-  | Name | Value |
-  |---|---|
-  | `load_ts` | `@variables('vLoadTs')` |
-  | `file_name` | `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
-  | `pipeline_name` | `@pipeline().Pipeline` |
-  | `pipeline_runid` | `@pipeline().RunId` |
-- Sink: KQL DB → `DepositMovement`, mapping `DepositMovement_mapping`.
-- **Ingestion properties (advanced):**
-  - Tag: `ingest-by:@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}`
-  - `ingestIfNotExists = ["FileName"]`  *(server-side dedup safety net)*
-- Retry: 3 × 60 s.
+1. **Activities** tab → click **Get metadata**.
+2. Drag a **green arrow** (On Success) from `Set vLoadTs` → `Get Metadata`.
 
-**b) `Append Success` (Script activity → Warehouse `wh_control_framework`, on Copy Success):**
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Get Metadata` |
+| Retry | `2` |
+| Retry interval (sec) | `30` |
+
+**Settings tab:**
+
+You need a connection to ADLS Gen2. If this is your first time:
+
+1. Click **Connection** → **+ New**.
+2. Search for **Azure Data Lake Storage Gen2** → select it.
+3. Fill in:
+
+   | Setting | Value |
+   |---|---|
+   | URL | `https://<YOUR-STORAGE-ACCOUNT>.dfs.core.windows.net` |
+   | Authentication kind | **Workspace Identity** |
+
+4. Click **Test connection** → must show ✅ **Connection successful**.
+   > If it fails, revisit [Workshop 00, sections 0.5–0.8](../00-prerequisites/) to verify Workspace Identity, RBAC, and resource instance rules.
+5. Click **Create**.
+
+After the connection is created:
+
+| Setting | Value |
+|---|---|
+| Connection | *(the ADLS Gen2 connection you just created)* |
+| File path — Container | `intraday-deposits` |
+| File path — Directory | Click text box → **Add dynamic content** → `@pipeline().parameters.pFolder` |
+| File path — File name | Click text box → **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| Field list | Click **+ New** three times and select: `exists`, `size`, `lastModified` |
+
+> **Why `coalesce(...)`?** When the pipeline is triggered by an event (Workshop 05), the file name comes from `pipeline()?.TriggerEvent?.FileName`. For manual runs, it falls back to the `pFileName` parameter.
+
+---
+
+### 4.4.2 Activity: `Lookup ProcessedFiles`
+
+Checks the Warehouse audit table to see if this file was already processed.
+
+1. **Activities** tab → click **Lookup**.
+2. Drag a **green arrow** (On Success) from `Get Metadata` → `Lookup ProcessedFiles`.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Lookup ProcessedFiles` |
+
+**Settings tab:**
+
+1. Click **Connection** → **+ New** → search for **Warehouse** → select your `wh_rti_control` warehouse.
+2. Fill in:
+
+| Setting | Value |
+|---|---|
+| Connection | `wh_rti_control` |
+| Use query | **Query** |
+| Query | *(see below)* |
+| First row only | ✅ Checked |
+
+**Query** (click the text box → **Add dynamic content**):
+
+```sql
+SELECT TOP (1) FileName
+FROM dbo.ProcessedFiles
+WHERE FileName = '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}'
+  AND Status   = 'Success';
+```
+
+> This returns one row if the file was already successfully processed, or empty if it's new.
+
+---
+
+### 4.4.3 Activity: `If Condition`
+
+Routes the pipeline to either "load the file" or "skip as duplicate".
+
+1. **Activities** tab → click **If condition**.
+2. Drag a **green arrow** (On Success) from `Lookup ProcessedFiles` → `If Condition`.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `If Condition` |
+
+**Activities tab:**
+
+| Setting | Value |
+|---|---|
+| Expression | Click the text box → **Add dynamic content** → `@empty(activity('Lookup ProcessedFiles').output.firstRow)` |
+
+> `@empty(...)` returns `true` if the Lookup found no matching row (file is new), `false` if a row exists (duplicate).
+
+Now click into the **True** and **False** branches to add activities inside each.
+
+---
+
+### 4.4.3a True branch: `Copy CSV to Eventhouse`
+
+Click the ✏️ **pencil icon** on the **True** branch to open it.
+
+1. **Activities** tab → **Copy data** → **Add copy data activity** (the third option — you need the full activity, not the wizard or copy job).
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Copy CSV to Eventhouse` |
+| Retry | `3` |
+| Retry interval (sec) | `60` |
+
+**Source tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | *(select the ADLS Gen2 connection created in 4.4.1)* |
+| File path — Container | `intraday-deposits` |
+| File path — Directory | **Add dynamic content** → `@pipeline().parameters.pFolder` |
+| File path — File name | **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| File format | **DelimitedText** |
+| First row as header | ✅ Checked |
+
+**Additional columns** (scroll down in the Source tab → **Additional columns** section → click **+ New** four times):
+
+| Name | Value |
+|---|---|
+| `load_ts` | **Add dynamic content** → `@variables('vLoadTs')` |
+| `file_name` | **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| `pipeline_name` | **Add dynamic content** → `@pipeline().Pipeline` |
+| `pipeline_runid` | **Add dynamic content** → `@pipeline().RunId` |
+
+> These four columns are **not** in the CSV — they're injected by the pipeline to provide lineage. Every row ingested will have these values.
+
+**Sink (Destination) tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | Click **+ New** → search for **KQL Database** → select your `DepositMovement` KQL database |
+| Table | `DepositMovement` |
+| Ingestion mapping name | `DepositMovement_mapping` |
+
+**Mapping tab:**
+
+1. Click **Import schemas** to auto-detect source columns from a sample CSV.
+2. Verify all 12 CSV columns + 4 additional columns map to the correct target columns.
+
+**Settings tab (advanced):**
+
+Scroll to **Advanced settings** or **Ingestion properties**:
+
+| Setting | Value |
+|---|---|
+| Ingestion tag | **Add dynamic content** → `ingest-by:@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}` |
+
+> The `ingest-by` tag is a server-side dedup safety net in KQL. If the same tag already exists, KQL will reject the duplicate ingestion.
+
+---
+
+### 4.4.3b True branch: `Append Success` (audit on Copy success)
+
+Still inside the **True** branch:
+
+1. **Activities** tab → click **Script** (not "Stored procedure").
+2. Drag a **green arrow** (On Success) from `Copy CSV to Eventhouse` → `Append Success`.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Append Success` |
+
+**Settings tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | Select the **Warehouse** connection → `wh_rti_control` |
+| Script type | **NonQuery** |
+| Script | **Add dynamic content** → paste the following: |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -120,7 +309,28 @@ VALUES (
 );
 ```
 
-**c) `Append Failed` (Script activity → Warehouse, on Copy Failure dependency):**
+---
+
+### 4.4.3c True branch: `Append Failed` (audit on Copy failure)
+
+1. **Activities** tab → click **Script**.
+2. Drag a **red arrow** (On Failure) from `Copy CSV to Eventhouse` → `Append Failed`.
+
+   > To create a failure dependency: click the **green arrow** from Copy, then in the arrow's dropdown change the condition from **On Success** to **On Failure** (red).
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Append Failed` |
+
+**Settings tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | `wh_rti_control` |
+| Script type | **NonQuery** |
+| Script | **Add dynamic content** → paste the following: |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -133,13 +343,62 @@ VALUES (
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
     '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
-    '@{replace(activity('Copy CSV to Eventhouse').error.message,'''','''''')}'
+    '@{replace(activity(''Copy CSV to Eventhouse'').error.message,'''','''''')}'
 );
 ```
 
-#### False branch — skip and audit
+---
 
-**`Append Skipped-Duplicate` (Script activity → Warehouse):**
+### 4.4.3d True branch: `Recalculate Gold Summary` (KQL Activity, Option A only)
+
+> **Skip this activity if you chose Option B** (materialized view) in Workshop 03 — the KQL engine handles Gold aggregation automatically.
+
+1. **Activities** tab → click **KQL** (or search for "KQL").
+2. Drag a **green arrow** (On Success) from `Append Success` → `Recalculate Gold Summary`.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Recalculate Gold Summary` |
+
+**Settings tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | Click **+ New** → **KQL Database** → select your `DepositMovement` KQL database |
+| Command type | **KQL Command** |
+| Command | **Add dynamic content** → paste: |
+
+```kusto
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(@{variables('vLoadTs')}))
+```
+
+> This passes the exact `vLoadTs` timestamp to the stored function. The function finds rows with that `load_ts`, gets their distinct dates, and re-aggregates only those dates into the Gold table.
+
+Now click the **← Back** arrow (top-left of the True branch) to return to the main canvas.
+
+---
+
+### 4.4.3e False branch: `Append Skipped-Duplicate`
+
+Click the ✏️ **pencil icon** on the **False** branch to open it.
+
+1. **Activities** tab → click **Script**.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Append Skipped-Duplicate` |
+
+**Settings tab:**
+
+| Setting | Value |
+|---|---|
+| Connection | `wh_rti_control` |
+| Script type | **NonQuery** |
+| Script | **Add dynamic content** → paste the following: |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -156,24 +415,9 @@ VALUES (
 );
 ```
 
-> 💡 Use the Fabric **Script** activity (not **Stored procedure**) and point it at the `wh_control_framework` Warehouse connection. Each audit branch is a single statement so there's no transaction concern.
+Click **← Back** to return to the main canvas.
 
-### 4.4.4 `Recalculate Gold Summary` (Script activity → KQL Database)
-
-After the audit row is written, call the stored function to recalculate **only** the dates present in the newly ingested file.
-
-- **Connection:** KQL Database `DepositMovement` (via workspace identity)
-- **Script:**
-
-```kusto
-.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel(datetime(@{variables('vLoadTs')}))
-```
-
-> This calls the stored function created in Workshop 03 (Option A), passing the exact `load_ts` timestamp that was stamped on the ingested rows. The function finds distinct dates from those rows, re-aggregates only those dates, and appends the results into the `Summary_Alert_Channel` Gold table.
->
-> Because the pipeline passes the exact timestamp (not a time window like `ago(15m)`), this works regardless of pipeline schedule — every 10 minutes, hourly, or on-demand.
->
-> If you chose **Option B** (materialized view) in Workshop 03, skip this activity entirely — the KQL engine handles it automatically.
+> 💡 **Why Script, not Stored Procedure?** The Fabric **Script** activity lets you run inline SQL directly. **Stored Procedure** activity requires a pre-created proc in the Warehouse. Since each audit is a single INSERT statement, inline Script is simpler — no extra Warehouse objects to manage.
 
 ## 4.5 Save and test manually
 
