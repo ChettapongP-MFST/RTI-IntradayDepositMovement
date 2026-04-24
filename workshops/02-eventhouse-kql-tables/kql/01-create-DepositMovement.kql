@@ -20,8 +20,8 @@
     pipeline_runid:   string
 )
 
-// CSV ingestion mapping — ordinals 0..11 from the CSV, ordinals 12..15 supplied
-// by Copy Activity "Additional columns" (projected before the sink).
+// CSV ingestion mapping — ordinals 0..11 are data columns (from the CSV),
+// ordinals 12..15 are system columns supplied by Copy Activity "Additional columns".
 .create table DepositMovement ingestion csv mapping 'DepositMovement_mapping'
 ```
 [

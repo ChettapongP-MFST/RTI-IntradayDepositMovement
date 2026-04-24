@@ -26,34 +26,34 @@ This script does **three things**. Let's walk through each one before you execut
 
 ### 2.2.1 Table creation (16 columns)
 
-The table has 16 columns across four categories:
+The table has 16 columns split into **data columns** (from the CSV) and **system columns** (injected by the pipeline):
 
-| Category | Columns | Description |
-|---|---|---|
-| **Grain** | `Date`, `Time` | Business date and 30-minute time slot (e.g., `00:00-00:30`) |
-| **Dimensions** | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` | Slicing attributes for analysis |
-| **Measures** | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` | Numeric values for aggregation |
-| **Lineage** | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` | Metadata injected by the Data Pipeline (not in the source CSV) |
+| Category | Type | Columns | Description |
+|---|---|---|---|
+| Grain | **Data column** | `Date`, `Time` | Business date and 30-minute time slot (e.g., `00:00-00:30`) |
+| Dimensions | **Data column** | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` | Slicing attributes for analysis |
+| Measures | **Data column** | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` | Numeric values for aggregation |
+| Lineage | **System column** | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` | Metadata injected by the Data Pipeline — not in the source CSV |
 
 ### 2.2.2 CSV ingestion mapping (`DepositMovement_mapping`)
 
 The mapping tells KQL **which CSV column position (ordinal) maps to which table column**. This is necessary because:
 
-- **The source CSV files have only 12 columns**, but the table has 16.
-- **The extra 4 lineage columns** (`load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`) don't exist in the CSV — they are **appended by the Data Pipeline's Copy Activity** (Workshop 04) using "Additional columns".
+- **The source CSV files have only 12 data columns**, but the table has 16 (12 data + 4 system).
+- **The 4 system columns** (`load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`) don't exist in the CSV — they are **appended by the Data Pipeline's Copy Activity** (Workshop 04) using "Additional columns".
 - The mapping ensures:
-  - **Ordinals 0–11** → mapped from the CSV file
-  - **Ordinals 12–15** → mapped from the pipeline-injected columns
+  - **Ordinals 0–11** → **data columns** (from the CSV file)
+  - **Ordinals 12–15** → **system columns** (injected by the pipeline)
 
-| Ordinal | Column | Source |
-|---|---|---|
-| 0–11 | `Date` … `Total_Txn` | CSV file content |
-| 12 | `load_ts` | Pipeline expression `utcNow()` |
-| 13 | `file_name` | `$$FILEPATH` (source blob path) |
-| 14 | `pipeline_name` | `@pipeline().Pipeline` |
-| 15 | `pipeline_runid` | `@pipeline().RunId` |
+| Ordinal | Column | Type | Source |
+|---|---|---|---|
+| 0–11 | `Date` … `Total_Txn` | Data column | CSV file content |
+| 12 | `load_ts` | System column | Pipeline expression `utcNow()` |
+| 13 | `file_name` | System column | `$$FILEPATH` (source blob path) |
+| 14 | `pipeline_name` | System column | `@pipeline().Pipeline` |
+| 15 | `pipeline_runid` | System column | `@pipeline().RunId` |
 
-Without this mapping, KQL would auto-infer column positions and types, causing the 4 extra columns to fail silently or land in wrong columns.
+Without this mapping, KQL would auto-infer column positions and types, causing the 4 system columns to fail silently or land in wrong columns.
 
 The mapping is saved as `'DepositMovement_mapping'` — this name is referenced later in the Copy Activity sink configuration (Workshop 04).
 

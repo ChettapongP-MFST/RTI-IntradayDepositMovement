@@ -15,7 +15,7 @@ A retail bank needs **near real-time visibility** into intraday deposit movement
 
 - Dashboards that refresh within a minute
 - Automated alerts to Teams when large net outflows or ingestion failures occur
-- Full auditability of which file produced which rows (lineage)
+- Full auditability of which file produced which rows (system columns)
 
 This workshop series walks through building that solution end-to-end.
 
@@ -100,7 +100,7 @@ Key design principles:
 
 - **Event-driven**: `Microsoft.Storage.BlobCreated` triggers the pipeline immediately when a file lands.
 - **Idempotent**: `dbo.ProcessedFiles` control table in a Fabric Warehouse + KQL `ingest-by` tag prevent duplicate loads.
-- **Traceable**: Every business row carries `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`.
+- **Traceable**: Every business row carries four **system columns** — `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` — injected by the pipeline.
 - **Secured**: ADLS Gen2 firewalled; Fabric reaches it via **Trusted Workspace Access** (resource instance rule).
 
 ---
@@ -129,7 +129,7 @@ Microsoft Fabric Real-Time Intelligence supports several architecture patterns. 
 - **Store:** Eventhouse / KQL DB.
 - **Latency:** ~15–60 seconds file-land → Power BI.
 - **Best for:** scheduled / semi-batch extracts (5/10/15/30-min drops), core-banking / ERP exports, bank intraday monitoring.
-- **Trade-off:** pay-per-run (very low idle cost) + full ETL control (Lookup / If / Copy) + easy lineage — but not suited for sub-second latency.
+- **Trade-off:** pay-per-run (very low idle cost) + full ETL control (Lookup / If / Copy) + easy system-column traceability — but not suited for sub-second latency.
 
 ### Pattern C — Event-driven Batch (ADLS Gen2 → Pipeline → Lakehouse)
 
@@ -162,7 +162,7 @@ A superset showing Eventstream + Eventhouse feeding **all four serving surfaces*
 | File-level idempotency | Complex | **Native** (`ingest-by` + control table) | Manual MERGE |
 | Cost at rest | $$$ | **$** | $$ |
 | Ops skill required | Streaming engineer | **Data engineer** | Lake engineer |
-| Lineage per file | Harder | **Trivial** (pipeline params) | Moderate |
+| System columns per file | Harder | **Trivial** (pipeline params) | Moderate |
 
 ### Recommendation — why Pattern B fits this use case best
 
@@ -171,7 +171,7 @@ The business scenario is: **core-banking extracts land every 10 minutes as CSV i
 1. **Source reality** — the upstream is file-based, not streaming. Forcing Kafka (Pattern A) would be a costly retrofit.
 2. **Latency SLA** — ops need < 1 min; Pattern B delivers 15–60 s comfortably. Pattern A's 1-sec latency exceeds the SLA at higher cost; Pattern C's 1–10 min may miss it.
 3. **Cost** — Pattern B pays only on file arrival (~144 runs/day), orders of magnitude cheaper than a continuous Eventstream.
-4. **Governance & audit** — banks need "which file produced which rows". Pipelines give this natively via the `dbo.ProcessedFiles` control table (Fabric Warehouse, queryable via T-SQL) + lineage columns on the KQL business table.
+4. **Governance & audit** — banks need "which file produced which rows". Pipelines give this natively via the `dbo.ProcessedFiles` control table (Fabric Warehouse, queryable via T-SQL) + system columns on the KQL business table.
 5. **Idempotency** — `Get Metadata → Lookup → If → Copy (ingest-by tag)` is the canonical pattern and maps 1-to-1 to Pattern B.
 6. **Operational simplicity** — existing data engineers already know pipelines; no new streaming runtime to operate.
 7. **Hot query path preserved** — KQL still powers 30-s Power BI APR and sub-second Activator evaluation.
@@ -194,12 +194,12 @@ The **balanced hybrid**: once Pattern B is running, turn on OneLake availability
 
 **`DepositMovement`** (business table, 16 columns):
 
-| Category | Columns |
-|---|---|
-| Grain | `Date`, `Time` |
-| Dimensions | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` |
-| Measures | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
-| Lineage | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
+| Category | Type | Columns |
+|---|---|---|
+| Grain | Data column | `Date`, `Time` |
+| Dimensions | Data column | `Product`, `Channel`, `Channel_Group`, `Transaction_Type` |
+| Measures | Data column | `Credit_Amount`, `Debit_Amount`, `Net_Amount`, `Credit_Txn`, `Debit_Txn`, `Total_Txn` |
+| Lineage | System column | `load_ts`, `file_name`, `pipeline_name`, `pipeline_runid` |
 
 **`wh_control_framework.dbo.ProcessedFiles`** (audit/control table, Fabric Warehouse, 8 columns):
 
