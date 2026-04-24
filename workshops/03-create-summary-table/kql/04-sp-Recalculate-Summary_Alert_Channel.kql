@@ -13,7 +13,7 @@ sp_Recalculate_Summary_Alert_Channel()
     // Step 1: Find distinct dates from the most recent ingestion (last 15 minutes)
     // This ensures we only recalculate dates that were just added/updated
     let RecentDates = DepositMovement
-        | where IngestedAtUtc >= ago(15m)
+        | where load_ts >= ago(15m)
         | distinct Date;
 
     // Step 2: For each date in the recent batch, aggregate by Channel

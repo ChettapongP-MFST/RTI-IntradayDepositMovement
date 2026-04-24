@@ -76,14 +76,14 @@ New CSV file arrives
 
 ```kql
 let RecentDates = DepositMovement
-    | where IngestedAtUtc >= ago(15m)
+    | where load_ts >= ago(15m)
     | distinct Date;
 ```
 
 | Part | What it does |
 |---|---|
 | `let RecentDates =` | Stores the result as a reusable variable |
-| `where IngestedAtUtc >= ago(15m)` | Filters to rows ingested in the **last 15 minutes** — this catches the batch that just landed |
+| `where load_ts >= ago(15m)` | Filters to rows whose `load_ts` (pipeline injection timestamp) is within the **last 15 minutes** — this catches the batch that just landed |
 | `distinct Date` | Extracts the unique business dates from those rows |
 
 **Example:** If the pipeline just ingested a file containing rows for `2026-04-24` and `2026-04-25`, `RecentDates` will contain exactly those two dates.
