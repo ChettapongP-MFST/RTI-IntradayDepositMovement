@@ -8,14 +8,14 @@ Bronze (DepositMovement table) ──► Stored Procedure / Materialized View �
 
 There are **two options** to build this. Choose one:
 
-| | Option A — Stored Procedure | Option B — Materialized View |
+| | Option A — Stored Function | Option B — Materialized View |
 |---|---|---|
-| **Mechanism** | Pipeline calls a stored procedure after each ingestion | KQL engine auto-aggregates as new data arrives |
-| **Trigger** | Explicit — pipeline must call `exec sp_...` | Automatic — runs in the background, no pipeline step needed |
+| **Mechanism** | Pipeline calls `.set-or-append` with a stored function after each ingestion | KQL engine auto-aggregates as new data arrives |
+| **Trigger** | Explicit — pipeline must call `.set-or-append <| sp_...()` | Automatic — runs in the background, no pipeline step needed |
 | **Pipeline change** | Requires a "KQL Activity" step in the pipeline (Workshop 04) | No pipeline change needed |
-| **Latency** | Seconds after pipeline calls the procedure | Near-real-time (KQL processes new extents automatically) |
+| **Latency** | Seconds after pipeline calls the function | Near-real-time (KQL processes new extents automatically) |
 | **Custom logic** | Full KQL flexibility (windowing, filtering, complex joins) | Limited to `summarize` aggregation functions |
-| **Ops overhead** | Must ensure pipeline calls the procedure on every run | Zero — KQL manages it autonomously |
+| **Ops overhead** | Must ensure pipeline calls the function on every run | Zero — KQL manages it autonomously |
 | **Best for** | Complex transformation logic, conditional recalculation | Simple aggregations that should always stay up to date |
 
 > 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B, you can skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
@@ -44,26 +44,26 @@ Both options produce the same Gold table. While `DepositMovement` stores **granu
 
 ---
 
-## Option A — Stored Procedure (Incremental Recalculation)
+## Option A — Stored Function (Incremental Recalculation)
 
 ### 3.A1 Create the Gold table
 
-The table is **not populated during creation** — it will be filled by the stored procedure (step 3.A2), which the Data Pipeline calls after each ingestion.
+The table is **not populated during creation** — it will be filled by the stored function (step 3.A2), which the Data Pipeline calls after each ingestion.
 
 Run in the KQL Database → **Query** pane:
 
 - [kql/03-create-Summary_Alert_Channel.kql](kql/03-create-Summary_Alert_Channel.kql)
 
-### 3.A2 Create the Stored Procedure
+### 3.A2 Create the Stored Function
 
-This stored procedure is the **engine behind the Gold table**. Rather than re-aggregating the entire `DepositMovement` table every time (which would be expensive), it uses an **incremental approach**:
+This stored function is the **engine behind the Gold table**. Rather than re-aggregating the entire `DepositMovement` table every time (which would be expensive), it uses an **incremental approach**:
 
 ```
 New CSV file arrives
   └─► Pipeline ingests into DepositMovement (Bronze)
-       └─► Pipeline calls this stored procedure
-            └─► Procedure finds which dates were just loaded (last 15 min)
-                 └─► Re-aggregates ONLY those dates into Summary_Alert_Channel (Gold)
+       └─► Pipeline calls .set-or-append with this function
+            └─► Function finds which dates were just loaded (last 15 min)
+                 └─► Re-aggregates ONLY those dates → appended to Summary_Alert_Channel (Gold)
 ```
 
 **Why incremental?**
@@ -123,7 +123,7 @@ This collapses all granular rows (per product, per time slot, per transaction ty
 | `2026-04-24, ATM, Fixed, Off-Us, 00:00-00:30` | *(merged into above)* |
 | `2026-04-24, ATM, Savings, On-Us, 00:30-01:00` | *(merged into above)* |
 
-#### Step 4 — Add timestamp
+#### Step 4 — Add timestamp and return
 
 ```kql
 | extend UpdatedAtUtc = now()
@@ -131,21 +131,24 @@ This collapses all granular rows (per product, per time slot, per transaction ty
 
 Stamps each aggregated row with the current UTC time, so you can tell **when** the Gold table was last refreshed for that Date + Channel.
 
-#### Step 5 — Upsert into the Gold table
+> **Important — Kusto design principle:** The function body is a **pure query** — it returns a result set but does not write anything. Fabric Eventhouse does not support `.create procedure` or `insert into` inside function bodies. The write happens externally via `.set-or-append` (see below).
 
-```kql
-| as T
-| getorcreate table Summary_Alert_Channel (Date:datetime, Channel:string, ...)
-| insert into Summary_Alert_Channel (T)
+### How the function is called
+
+The function alone **returns** the aggregated rows but does not write them. To append the results into the Gold table:
+
+```kusto
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
 ```
 
 | Part | What it does |
 |---|---|
-| `as T` | Names the result set `T` for reference in the insert |
-| `getorcreate table` | Ensures the target table exists (creates it if not — safety net) |
-| `insert into Summary_Alert_Channel (T)` | Writes the aggregated rows into the Gold table |
+| `.set-or-append` | Management command that writes a query's result set into a table (creates it if it doesn't exist) |
+| `Summary_Alert_Channel` | Target Gold table |
+| `<\|` | "Pipe from query" operator — feeds the function's output into the write command |
+| `sp_Recalculate_Summary_Alert_Channel()` | The function call — returns the aggregated rows |
 
-> **Note:** This is an **insert**, not an upsert/merge. Each recalculation appends new summary rows. If the same Date + Channel is recalculated multiple times, multiple rows will exist — the latest one (by `UpdatedAtUtc`) is the most current. Downstream queries/reports should filter by the latest `UpdatedAtUtc` per Date + Channel, or the table should be periodically deduplicated.
+> **Note:** This is an **append**, not an upsert/merge. Each recalculation appends new summary rows. If the same Date + Channel is recalculated multiple times, multiple rows will exist — the latest one (by `UpdatedAtUtc`) is the most current. Downstream queries/reports should filter by the latest `UpdatedAtUtc` per Date + Channel, or the table should be periodically deduplicated.
 
 ### Visual flow
 
@@ -165,7 +168,7 @@ Step 3: Summarize → one row per Channel (ATM, BCMS, ENET, ...)
 Step 4: Stamp UpdatedAtUtc = 2026-04-24T08:31:00Z
   │
   ▼
-Step 5: Insert into Summary_Alert_Channel (Gold)
+Function returns result set → .set-or-append writes to Summary_Alert_Channel (Gold)
 ```
 
 ### Design rationale
@@ -174,7 +177,8 @@ Step 5: Insert into Summary_Alert_Channel (Gold)
 |---|---|
 | **Performance** | Only recalculates affected dates, not the entire history |
 | **Correctness** | Re-aggregates the full day (not just new rows), so totals are always accurate |
-| **Simplicity** | Single procedure, called once per pipeline run |
+| **Simplicity** | Single function, called once per pipeline run via `.set-or-append` |
+| **Testability** | Call `sp_Recalculate_Summary_Alert_Channel()` alone to preview results without writing |
 | **Freshness tracking** | `UpdatedAtUtc` lets Power BI / Activator know when data was last refreshed |
 
 ### Run the script
@@ -186,8 +190,11 @@ Open the KQL Database → **Query** pane and run:
 **Test manually:**
 
 ```kusto
-// Run the procedure
-exec sp_Recalculate_Summary_Alert_Channel;
+// Preview what would be inserted (no write)
+sp_Recalculate_Summary_Alert_Channel()
+
+// Actually append into the Gold table
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
 
 // Check results
 Summary_Alert_Channel | order by Date desc, Channel | limit 20
@@ -197,7 +204,7 @@ Summary_Alert_Channel | order by Date desc, Channel | limit 20
 
 ## Option B — Materialized View (Automatic Aggregation)
 
-A **materialized view** is a KQL object that automatically and incrementally aggregates data from a source table. Every time new data is ingested into `DepositMovement`, the KQL engine processes **only the new extents (data batches)** and updates the materialized view — no pipeline step or stored procedure call needed.
+A **materialized view** is a KQL object that automatically and incrementally aggregates data from a source table. Every time new data is ingested into `DepositMovement`, the KQL engine processes **only the new extents (data batches)** and updates the materialized view — no pipeline step or stored function call needed.
 
 ```
 New CSV file arrives
@@ -209,9 +216,9 @@ New CSV file arrives
 
 ### How it differs from Option A
 
-| Aspect | Option A (Stored Procedure) | Option B (Materialized View) |
+| Aspect | Option A (Stored Function) | Option B (Materialized View) |
 |---|---|---|
-| **When does it run?** | Only when the pipeline calls `exec sp_...` | Automatically after every ingestion |
+| **When does it run?** | Only when the pipeline calls `.set-or-append <\| sp_...()` | Automatically after every ingestion |
 | **What does it process?** | All rows for the affected dates (full-day re-aggregation) | Only new extents (truly incremental) |
 | **Deduplication** | Appends rows — needs `UpdatedAtUtc` filtering | Maintains a single row per `Date` + `Channel` |
 | **Pipeline dependency** | Pipeline must include a KQL Activity step | No pipeline change needed |
@@ -308,7 +315,7 @@ To check materialization health and lag:
 
 **If you chose Option A:**
 - [ ] Gold table `Summary_Alert_Channel` exists with 7 columns
-- [ ] Stored procedure `sp_Recalculate_Summary_Alert_Channel` exists
+- [ ] Stored function `sp_Recalculate_Summary_Alert_Channel` exists (verify: `.show functions sp_Recalculate_Summary_Alert_Channel`)
 
 **If you chose Option B:**
 - [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy

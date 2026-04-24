@@ -143,16 +143,18 @@ VALUES (
 
 ### 4.4.4 `Recalculate Gold Summary` (Script activity → KQL Database)
 
-After the audit row is written, call the stored procedure to recalculate **only** the dates present in the newly ingested file.
+After the audit row is written, call the stored function to recalculate **only** the dates present in the newly ingested file.
 
 - **Connection:** KQL Database `DepositMovement` (via workspace identity)
 - **Script:**
 
 ```kusto
-exec sp_Recalculate_Summary_Alert_Channel
+.set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
 ```
 
-> This runs the stored procedure created in Workshop 03 (Option A). It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
+> This calls the stored function created in Workshop 03 (Option A). It finds distinct dates from records ingested in the last 15 minutes, re-aggregates only those dates, and appends the results into the `Summary_Alert_Channel` Gold table.
+>
+> If you chose **Option B** (materialized view) in Workshop 03, skip this activity entirely — the KQL engine handles it automatically.
 
 ## 4.5 Save and test manually
 

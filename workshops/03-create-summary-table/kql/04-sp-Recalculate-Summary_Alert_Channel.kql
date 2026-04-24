@@ -1,8 +1,14 @@
-// Workshop 02 — Stored Procedure: Recalculate Summary_Alert_Channel (Gold)
+// Workshop 03 — Stored Function: Recalculate Summary_Alert_Channel (Gold)
 // Run in the KQL Database "DepositMovement"
 // Purpose: After new data lands in DepositMovement, recalculate ONLY the dates present in the new batch
+//
+// Fabric Eventhouse uses ".create-or-alter function" (not ".create procedure").
+// The function returns a result set (pure query, no side effects).
+// To write the results into the Gold table, call it via:
+//     .set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
 
-.create procedure sp_Recalculate_Summary_Alert_Channel()
+.create-or-alter function with (docstring = "Recalculate Summary_Alert_Channel for recently ingested dates", folder = "Procedures")
+sp_Recalculate_Summary_Alert_Channel()
 {
     // Step 1: Find distinct dates from the most recent ingestion (last 15 minutes)
     // This ensures we only recalculate dates that were just added/updated
@@ -11,7 +17,6 @@
         | distinct Date;
 
     // Step 2: For each date in the recent batch, aggregate by Channel
-    // Then upsert (getorcreate + insert) into the Gold table
     RecentDates
     | join kind=inner DepositMovement on Date
     | summarize 
@@ -21,10 +26,22 @@
         Txn_Count = sum(Total_Txn)
         by Date, Channel
     | extend UpdatedAtUtc = now()
-    | as T
-    | getorcreate table Summary_Alert_Channel (Date:datetime, Channel:string, Credit_Total:real, Debit_Total:real, Net_Amount:real, Txn_Count:long, UpdatedAtUtc:datetime)
-    | insert into Summary_Alert_Channel (T)
 }
 
-// Verify the procedure exists
-.show procedures sp_Recalculate_Summary_Alert_Channel
+// ============================================================
+// HOW TO USE
+// ============================================================
+// 1. Run the .create-or-alter above to register the function.
+//
+// 2. Test — preview what would be inserted (no write):
+//        sp_Recalculate_Summary_Alert_Channel()
+//
+// 3. Execute — append results into the Gold table:
+//        .set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
+//
+// 4. In the Data Pipeline (Workshop 04), the KQL Activity runs:
+//        .set-or-append Summary_Alert_Channel <| sp_Recalculate_Summary_Alert_Channel()
+// ============================================================
+
+// Verify the function exists
+.show functions sp_Recalculate_Summary_Alert_Channel
