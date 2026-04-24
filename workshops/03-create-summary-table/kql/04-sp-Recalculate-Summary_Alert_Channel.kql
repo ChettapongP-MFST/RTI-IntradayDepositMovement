@@ -44,4 +44,4 @@ sp_Recalculate_Summary_Alert_Channel()
 // ============================================================
 
 // Verify the function exists
-.show functions sp_Recalculate_Summary_Alert_Channel
+.show function sp_Recalculate_Summary_Alert_Channel

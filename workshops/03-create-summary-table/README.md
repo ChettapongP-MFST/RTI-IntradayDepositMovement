@@ -315,7 +315,7 @@ To check materialization health and lag:
 
 **If you chose Option A:**
 - [ ] Gold table `Summary_Alert_Channel` exists with 7 columns
-- [ ] Stored function `sp_Recalculate_Summary_Alert_Channel` exists (verify: `.show functions sp_Recalculate_Summary_Alert_Channel`)
+- [ ] Stored function `sp_Recalculate_Summary_Alert_Channel` exists (verify: `.show function sp_Recalculate_Summary_Alert_Channel`)
 
 **If you chose Option B:**
 - [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy
