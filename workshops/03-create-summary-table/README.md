@@ -21,6 +21,67 @@ There are **three options** to build this. Choose one:
 | **Ops overhead** | Must ensure pipeline calls function on every run | Zero | Zero |
 | **Best for** | Complex transformations, explicit control | Minimal schema, simplest setup | Same schema as A, zero-ops like B |
 
+### What the Gold table looks like (after two pipeline runs)
+
+Assume the pipeline has run twice: **07:00-07:30** then **08:00-08:30**. Here's what each option produces:
+
+#### Option A — Stored Function (appends rows each run)
+
+The table **grows** with each pipeline run. Stale rows from earlier runs remain; downstream queries must filter by the latest `UpdatedAtUtc`.
+
+```
+Summary_Alert_Channel (regular table)
+┌──────────┬─────────┬──────────────┬──────────────┐
+│  Date    │ Channel │ Credit_Total │ UpdatedAtUtc │
+├──────────┼─────────┼──────────────┼──────────────┤
+│  Day 5   │ ATM     │       50,000 │ 07:31 (stale)│  ← from 07:00-07:30 run
+│  Day 5   │ BCMS    │       30,000 │ 07:31 (stale)│
+│  Day 5   │ ENET    │       20,000 │ 07:31 (stale)│
+│  Day 5   │ ATM     │       65,000 │ 08:31 (latest) ✅│  ← from 08:00-08:30 run
+│  Day 5   │ BCMS    │       38,000 │ 08:31 (latest) ✅│
+│  Day 5   │ ENET    │       27,000 │ 08:31 (latest) ✅│
+└──────────┴─────────┴──────────────┴──────────────┘
+                                      6 rows (grows every run)
+```
+
+> ⚠️ To get the correct current totals, downstream queries must pick the **latest row** per Date+Channel:
+> ```kusto
+> Summary_Alert_Channel
+> | summarize arg_max(UpdatedAtUtc, *) by Date, Channel
+> ```
+
+#### Option B — Materialized View (single row, no timestamp)
+
+The view **auto-merges** — always one row per Date+Channel. No stale rows, no dedup needed. No `UpdatedAtUtc` column.
+
+```
+Summary_Alert_Channel_MV (materialized view)
+┌──────────┬─────────┬──────────────┐
+│  Date    │ Channel │ Credit_Total │
+├──────────┼─────────┼──────────────┤
+│  Day 5   │ ATM     │       65,000 │  ← auto-merged (50k + 15k)
+│  Day 5   │ BCMS    │       38,000 │  ← auto-merged (30k + 8k)
+│  Day 5   │ ENET    │       27,000 │  ← auto-merged (20k + 7k)
+└──────────┴─────────┴──────────────┘
+                       3 rows (always)
+```
+
+#### Option C — Materialized View (single row, with timestamp)
+
+Same auto-merge as B, but includes `UpdatedAtUtc` via `max(load_ts)` — best of both worlds.
+
+```
+Summary_Alert_Channel (materialized view)
+┌──────────┬─────────┬──────────────┬──────────────────────┐
+│  Date    │ Channel │ Credit_Total │ UpdatedAtUtc         │
+├──────────┼─────────┼──────────────┼──────────────────────┤
+│  Day 5   │ ATM     │       65,000 │ 08:30 (latest load)  │  ← auto-merged
+│  Day 5   │ BCMS    │       38,000 │ 08:30 (latest load)  │  ← auto-merged
+│  Day 5   │ ENET    │       27,000 │ 08:30 (latest load)  │  ← auto-merged
+└──────────┴─────────┴──────────────┴──────────────────────┘
+                       3 rows (always)
+```
+
 > 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B or C, skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
 
 **Prerequisite:** [Workshop 02](../02-eventhouse-kql-tables/) complete (Eventhouse + KQL Database + `DepositMovement` table exist)
