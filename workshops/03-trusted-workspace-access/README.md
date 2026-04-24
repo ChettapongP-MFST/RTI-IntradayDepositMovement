@@ -2,7 +2,7 @@
 
 Allow the firewall-enabled ADLS Gen2 to be accessed by the Fabric pipeline using **Workspace Identity** + a **resource instance rule**. This is the preferred path (no gateway required) and is supported for `Microsoft.Storage.BlobCreated` events.
 
-**Prerequisite:** [Workshop 02](../02-eventhouse-kql-tables/) complete
+**Prerequisite:** [Workshop 02b](../02b-create-summary-table/) complete
 **Next:** [Workshop 04 — Data Pipeline](../04-data-pipeline/)
 
 ---

@@ -152,7 +152,7 @@ After the audit row is written, call the stored procedure to recalculate **only*
 exec sp_Recalculate_Summary_Alert_Channel
 ```
 
-> This runs the stored procedure created in Workshop 02.7. It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
+> This runs the stored procedure created in Workshop 02b. It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
 
 ## 4.5 Save and test manually
 
