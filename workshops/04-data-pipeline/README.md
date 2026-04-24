@@ -2,7 +2,7 @@
 
 Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `DepositMovement`, with duplicate protection and full audit written to the **Warehouse** table `wh_control_framework.dbo.ProcessedFiles`.
 
-**Prerequisite:** [Workshop 03](../03-trusted-workspace-access/) complete
+**Prerequisite:** [Workshop 03](../03-create-summary-table/) complete
 **Next:** [Workshop 05 — Event Trigger](../05-event-trigger/)
 
 ---
@@ -16,7 +16,7 @@ Fabric workspace → **+ New item** → **Data pipeline** → name: `pl_ingest_D
 1. Canvas → **Copy data** → **New connection** → **Azure Data Lake Storage Gen2**.
 2. URL: `https://<STORAGE-ACCOUNT>.dfs.core.windows.net`
 3. Authentication: **Workspace Identity**.
-4. **Test connection** → must succeed. (If it fails, revisit Workshop 03.)
+4. **Test connection** → must succeed. (If it fails, revisit Workshop 00, sections 0.5–0.8.)
 
 ## 4.3 Pipeline parameters
 
@@ -152,7 +152,7 @@ After the audit row is written, call the stored procedure to recalculate **only*
 exec sp_Recalculate_Summary_Alert_Channel
 ```
 
-> This runs the stored procedure created in Workshop 02b. It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
+> This runs the stored procedure created in Workshop 03 (Option A). It finds distinct dates from records ingested in the last 15 minutes and recalculates only those dates in the `Summary_Alert_Channel` Gold table.
 
 ## 4.5 Save and test manually
 

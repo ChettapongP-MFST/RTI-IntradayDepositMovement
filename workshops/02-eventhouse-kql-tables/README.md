@@ -6,7 +6,7 @@ Create two Fabric items:
 2. A **Fabric Warehouse** for the audit/control table `dbo.ProcessedFiles` (T-SQL friendly, easy to join in Power BI, decoupled from the hot path).
 
 **Prerequisite:** [Workshop 01](../01-provision-adls-gen2/) complete
-**Next:** [Workshop 02b — Create the Summary Table](../02b-create-summary-table/)
+**Next:** [Workshop 03 — Create the Summary Table](../03-create-summary-table/)
 
 ---
 
@@ -158,4 +158,4 @@ In the KQL Database query pane:
 - [ ] Warehouse `wh_control_framework` exists
 - [ ] Table `dbo.ProcessedFiles` exists with 8 columns; empty `SELECT` returns no rows
 
-→ Proceed to **[Workshop 02b — Create the Summary Table](../02b-create-summary-table/)**
+→ Proceed to **[Workshop 03 — Create the Summary Table](../03-create-summary-table/)**

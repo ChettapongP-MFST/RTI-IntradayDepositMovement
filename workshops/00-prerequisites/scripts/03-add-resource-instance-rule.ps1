@@ -1,4 +1,4 @@
-# Add a Fabric workspace resource instance rule to the storage account (Workshop 03)
+# Add a Fabric workspace resource instance rule to the storage account (Workshop 00, section 0.7)
 # Requires: Az PowerShell signed in (Connect-AzAccount)
 [CmdletBinding()]
 param(

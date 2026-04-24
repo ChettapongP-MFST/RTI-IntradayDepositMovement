@@ -1,4 +1,4 @@
-# Grant Storage Blob Data Contributor to the Fabric workspace identity (Workshop 03)
+# Grant Storage Blob Data Contributor to the Fabric workspace identity (Workshop 00, section 0.6)
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string] $ResourceGroup,

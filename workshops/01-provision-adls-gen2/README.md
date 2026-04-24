@@ -46,7 +46,7 @@ Create the firewall-enabled ADLS Gen2 storage account and container that will re
    - Your public IP is listed under **Firewall**
    - **Allow Azure services on the trusted services list…** is checked ✅
 
-> Workshop 03 adds a **resource instance rule** so the Fabric workspace identity bypasses this firewall without opening it up publicly.
+> Workshop 00 (section 0.7) adds a **resource instance rule** so the Fabric workspace identity bypasses this firewall without opening it up publicly.
 
 ## 1.5 Event Grid
 

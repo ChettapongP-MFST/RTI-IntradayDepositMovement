@@ -1,4 +1,4 @@
-# Workshop 02b — Create the Summary Table
+# Workshop 03 — Create the Summary Table
 
 Create the **Gold aggregation layer** — a pre-aggregated summary table that stores daily channel-level summaries of deposit movements.
 
@@ -21,11 +21,11 @@ There are **two options** to build this. Choose one:
 > 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B, you can skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
 
 **Prerequisite:** [Workshop 02](../02-eventhouse-kql-tables/) complete (Eventhouse + KQL Database + `DepositMovement` table exist)
-**Next:** [Workshop 03 — Trusted Workspace Access](../03-trusted-workspace-access/)
+**Next:** [Workshop 04 — Data Pipeline](../04-data-pipeline/)
 
 ---
 
-## 2b.1 Gold table schema (Summary_Alert_Channel)
+## 3.1 Gold table schema (Summary_Alert_Channel)
 
 Both options produce the same Gold table. While `DepositMovement` stores **granular, row-level data** (per product, per channel, per time slot), this Gold table stores **daily channel-level summaries** — pre-aggregated for:
 
@@ -46,15 +46,15 @@ Both options produce the same Gold table. While `DepositMovement` stores **granu
 
 ## Option A — Stored Procedure (Incremental Recalculation)
 
-### 2b.A1 Create the Gold table
+### 3.A1 Create the Gold table
 
-The table is **not populated during creation** — it will be filled by the stored procedure (step 2b.A2), which the Data Pipeline calls after each ingestion.
+The table is **not populated during creation** — it will be filled by the stored procedure (step 3.A2), which the Data Pipeline calls after each ingestion.
 
 Run in the KQL Database → **Query** pane:
 
 - [kql/03-create-Summary_Alert_Channel.kql](kql/03-create-Summary_Alert_Channel.kql)
 
-### 2b.A2 Create the Stored Procedure
+### 3.A2 Create the Stored Procedure
 
 This stored procedure is the **engine behind the Gold table**. Rather than re-aggregating the entire `DepositMovement` table every time (which would be expensive), it uses an **incremental approach**:
 
@@ -217,7 +217,7 @@ New CSV file arrives
 | **Pipeline dependency** | Pipeline must include a KQL Activity step | No pipeline change needed |
 | **Failure recovery** | If the pipeline step fails, Gold table is stale | KQL retries automatically |
 
-### 2b.B1 Create the Materialized View
+### 3.B1 Create the Materialized View
 
 Run in the KQL Database → **Query** pane:
 
@@ -268,7 +268,7 @@ To check the view's materialization status:
 
 The `MaterializedTo` column shows the last timestamp up to which data has been processed.
 
-### 2b.B2 Query the materialized view
+### 3.B2 Query the materialized view
 
 Query it just like a regular table:
 
@@ -314,4 +314,4 @@ To check materialization health and lag:
 - [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy
 - [ ] `backfill=true` processed existing data (if any)
 
-→ Proceed to **[Workshop 03 — Trusted Workspace Access](../03-trusted-workspace-access/)**
+→ Proceed to **[Workshop 04 — Data Pipeline](../04-data-pipeline/)**
