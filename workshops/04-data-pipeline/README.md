@@ -401,9 +401,11 @@ VALUES (
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
     'Pipeline',
-    '@{replace(activity(''Copy CSV to Eventhouse'').error.message, '''', '''''''')}'
+    NULL
 );
 ```
+
+> 💡 **Why NULL for ErrorMsg?** The `replace()` function needed to escape single quotes inside the error message causes nested-quote parsing errors in Fabric's expression engine. Using `NULL` here is safe — the actual error details are always available in **Monitor → Pipeline runs → Activity details**.
 
 ---
 
