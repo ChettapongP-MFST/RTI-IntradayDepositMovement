@@ -181,3 +181,74 @@ In the KQL Database query pane:
 - [ ] Table `dbo.ProcessedFiles` exists with 8 columns; empty `SELECT` returns no rows
 
 → Proceed to **[Workshop 03 — Create the Summary Table](../03-create-summary-table/)**
+
+---
+
+## Appendix A — Lakehouse vs Warehouse vs Eventhouse
+
+Microsoft Fabric offers three analytical storage engines. Understanding when to use each one is critical for designing the right architecture.
+
+### What is each one?
+
+| | **Lakehouse** | **Warehouse** | **Eventhouse** |
+|---|---|---|---|
+| **What** | Delta Lake storage + Spark engine + SQL endpoint (read-only) | Full T-SQL data warehouse (read/write) | KQL-based real-time analytics database (Kusto engine) |
+| **Engine** | Apache Spark (PySpark, Spark SQL) | T-SQL (SQL Server-compatible) | Kusto Query Language (KQL) |
+| **Storage format** | Delta Parquet (open format) | Proprietary columnar | Columnar with compression + indexing optimized for append |
+| **Query language** | Spark SQL, PySpark, T-SQL (read-only via SQL endpoint) | T-SQL (full DML: INSERT, UPDATE, DELETE, MERGE) | KQL + limited T-SQL via `explain` (see Workshop 04, Appendix D) |
+| **Data pattern** | Batch ETL, schema-on-read, medallion architecture | Star/snowflake schema, structured reporting | Append-only, time-series, streaming, log analytics |
+| **Write pattern** | Spark notebooks, Data Pipelines, Dataflows | T-SQL INSERT/UPDATE/DELETE, COPY INTO | Streaming ingestion, queued ingestion, Data Pipelines |
+| **Update/Delete** | ✅ Via Spark (Delta merge) | ✅ Native T-SQL | ❌ Append-only (soft-delete via retention policy) |
+| **Latency** | Minutes (batch) | Seconds–minutes | **Sub-second** to seconds (streaming) |
+| **Best for** | Data engineers building ETL pipelines | BI analysts & SQL developers building reports | Real-time monitoring, IoT, log analytics, alerting |
+
+### Use cases
+
+| | **Lakehouse** | **Warehouse** | **Eventhouse** |
+|---|---|---|---|
+| **Use case 1** | **Medallion architecture** — Bronze (raw CSV/JSON) → Silver (cleaned) → Gold (aggregated) | **Financial reporting** — monthly P&L, balance sheet, regulatory reports | **Intraday deposit monitoring** ← *this workshop* |
+| **Use case 2** | **Data science** — ML feature engineering with PySpark notebooks | **Dashboard backend** — Power BI DirectQuery on star schema | **Fraud detection** — real-time transaction scoring |
+| **Use case 3** | **Data lake consolidation** — store Parquet/CSV/JSON from multiple sources | **Control/audit tables** — `ProcessedFiles` ← *this workshop* | **IoT telemetry** — millions of sensor readings per second |
+| **Use case 4** | **Cross-format joins** — join CSV files with Delta tables in Spark | **Ad-hoc SQL analysis** — business users write familiar SQL | **Log analytics** — application logs, security events, traces |
+| **Use case 5** | **Historical archive** — years of transaction history in cheap storage | **Slowly changing dimensions** — customer/product master data | **Anomaly detection** — built-in `series_decompose_anomalies()` |
+
+### Pros & Cons
+
+**Lakehouse**
+
+| Pros | Cons |
+|---|---|
+| ✅ Open Delta format — no vendor lock-in | ❌ No real-time ingestion |
+| ✅ Spark + SQL — flexible for both engineers and analysts | ❌ SQL endpoint is read-only |
+| ✅ Best for large-scale ETL and data science | ❌ Spark startup overhead (cold start ~30s) |
+| ✅ Cheapest storage for large volumes | ❌ Not suitable for low-latency queries |
+
+**Warehouse**
+
+| Pros | Cons |
+|---|---|
+| ✅ Full T-SQL — familiar to SQL developers | ❌ Not designed for streaming/real-time |
+| ✅ INSERT/UPDATE/DELETE/MERGE | ❌ Slower ingestion than Eventhouse |
+| ✅ Best for BI reporting and star schemas | ❌ No Spark/Python support |
+| ✅ Power BI DirectQuery optimized | ❌ More expensive for large scan workloads |
+
+**Eventhouse**
+
+| Pros | Cons |
+|---|---|
+| ✅ Sub-second ingestion and query | ❌ Append-only — no UPDATE/DELETE |
+| ✅ Built-in time-series functions | ❌ KQL learning curve (unfamiliar to SQL users) |
+| ✅ Native streaming from Event Hub, Kafka | ❌ Not suitable for transactional/OLTP workloads |
+| ✅ Built-in anomaly detection + alerting | ❌ No star schema / dimensional modeling |
+| ✅ Automatic indexing — no manual tuning | ❌ Retention-based data lifecycle (not row-level delete) |
+
+### In this workshop — why all three?
+
+| Component | Storage | Why this engine |
+|---|---|---|
+| `DepositMovement` table | **Eventhouse** | Real-time intraday monitoring — fast ingestion, time-series queries, alerting |
+| `ProcessedFiles` audit table | **Warehouse** | Control framework — needs INSERT (write), familiar SQL for ops teams |
+| `Summary_Alert_Channel` Gold table | **Eventhouse** | Pre-aggregated for Power BI + Activator — stays close to the source data |
+| *(Not used in this workshop)* | **Lakehouse** | Would be used if we needed historical archive or Spark-based ML on deposit patterns |
+
+> 💡 **Rule of thumb:** **Eventhouse** for real-time, **Warehouse** for structured reporting & control, **Lakehouse** for big data ETL & data science.
