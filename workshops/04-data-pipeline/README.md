@@ -669,3 +669,56 @@ DepositMovement
 ```
 
 > **Rule of thumb:** Store UTC everywhere → convert to `+7h` only where humans see it. This keeps all 9 workshops consistent and avoids cascading bugs.
+
+---
+
+## Appendix D — Convert T-SQL to KQL using `explain`
+
+KQL Database (Microsoft Fabric / Azure Data Explorer) has a built-in way to convert T-SQL queries into KQL. This is useful when you're familiar with SQL and want to learn the equivalent KQL syntax.
+
+### Step 1 — Write your T-SQL query
+
+In the KQL queryset editor, write your T-SQL query prefixed with `--` (SQL comment syntax):
+
+```sql
+-- SELECT TOP 10 * FROM DepositMovement
+```
+
+> The `--` prefix tells the KQL engine to treat the line as T-SQL.
+
+### Step 2 — Add `explain`
+
+Prefix the entire line with the `explain` keyword:
+
+```sql
+explain -- SELECT TOP 10 * FROM DepositMovement
+```
+
+Click **Run**. Instead of returning data, the engine returns the equivalent **KQL query**:
+
+| Query |
+|---|
+| `DepositMovement \| project Date, Time, Product, Channel, Channel_Group, Transaction_Type, Credit_Amount, Debit_Amount, Net_Amount, Credit_Txn, Debit_Txn, Total_Txn, load_ts, file_name, pipeline_name, pipeline_runid \| take int(10)` |
+
+### More examples
+
+| T-SQL | `explain` command | KQL result |
+|---|---|---|
+| `SELECT COUNT(*) FROM DepositMovement` | `explain -- SELECT COUNT(*) FROM DepositMovement` | `DepositMovement \| summarize count()` |
+| `SELECT Channel, SUM(Credit_Amount) FROM DepositMovement GROUP BY Channel` | `explain -- SELECT Channel, SUM(Credit_Amount) FROM DepositMovement GROUP BY Channel` | `DepositMovement \| summarize sum(Credit_Amount) by Channel` |
+| `SELECT * FROM DepositMovement WHERE Channel = 'ATM' ORDER BY Date DESC` | `explain -- SELECT * FROM DepositMovement WHERE Channel = 'ATM' ORDER BY Date DESC` | `DepositMovement \| where Channel == 'ATM' \| sort by Date desc` |
+
+### Key differences — T-SQL vs KQL
+
+| Concept | T-SQL | KQL |
+|---|---|---|
+| Select all rows | `SELECT * FROM Table` | `Table` |
+| Limit rows | `SELECT TOP 10 *` | `Table \| take 10` |
+| Filter | `WHERE Channel = 'ATM'` | `\| where Channel == 'ATM'` |
+| Aggregate | `SELECT Channel, COUNT(*) ... GROUP BY Channel` | `\| summarize count() by Channel` |
+| Sort | `ORDER BY Date DESC` | `\| sort by Date desc` |
+| Column subset | `SELECT Col1, Col2` | `\| project Col1, Col2` |
+| Alias | `SELECT Col1 AS Alias1` | `\| project Alias1 = Col1` |
+| Time filter | `WHERE Date > '2026-01-01'` | `\| where Date > datetime(2026-01-01)` |
+
+> 💡 **Tip:** The `explain` command is a great learning tool. Write any T-SQL query you know, prefix it with `explain --`, and the engine shows you the KQL equivalent. Over time, you'll start writing KQL directly — it's more natural for time-series and log analytics.
