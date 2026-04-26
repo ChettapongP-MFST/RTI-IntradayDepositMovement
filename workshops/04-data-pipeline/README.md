@@ -851,3 +851,104 @@ Click **Run**. Instead of returning data, the engine returns the equivalent **KQ
 | Time filter | `WHERE Date > '2026-01-01'` | `\| where Date > datetime(2026-01-01)` |
 
 > 💡 **Tip:** The `explain` command is a great learning tool. Write any T-SQL query you know, prefix it with `explain --`, and the engine shows you the KQL equivalent. Over time, you'll start writing KQL directly — it's more natural for time-series and log analytics.
+
+---
+
+## Appendix E — Pipeline Concurrency & KQL Throttling
+
+### The problem
+
+When the event trigger (Workshop 05) monitors ADLS Gen2, **each new file creates a separate pipeline run**. If you upload 16 files simultaneously, 16 pipelines launch at the same time.
+
+The KQL Eventhouse has a hard limit: **1 concurrent control command** (`.set-or-append`, `.set-or-replace`, etc.) per database. When multiple pipelines reach the `Recalculate Gold Summary` activity simultaneously, all but one receive a **429 (Too Many Requests)** error:
+
+```
+CapacityPolicy/Ingestion: The control command was aborted due to throttling.
+```
+
+### What happens without any protection
+
+```
+16 files uploaded simultaneously
+  │
+  ▼
+16 pipeline runs start at the same time
+  │
+  ▼
+16 Copy activities run (OK — Copy is not a control command)
+  │
+  ▼
+16 .set-or-append hit KQL database
+  ├─ 1 succeeds
+  └─ 15 fail with 429 throttling
+```
+
+### Solution: Set pipeline concurrency limit
+
+Fabric lets you limit how many runs of the **same pipeline** can execute concurrently.
+
+**How to configure:**
+
+1. Open `pl_ingest_DepositMovement` in the pipeline editor.
+2. Click anywhere on the **canvas background** (deselect all activities).
+3. In the **bottom pane**, click the **Settings** tab (between Variables and Output).
+4. Set **Concurrency** to `1`.
+5. Save the pipeline.
+
+### How concurrency = 1 works
+
+```
+16 files uploaded simultaneously
+  │
+  ▼
+16 trigger events fire → 16 pipeline runs created
+  │
+  ▼
+Run 1: Starts immediately ──► Copy ──► Audit ──► .set-or-append ──► ✅ Complete
+Run 2: Queued (Not started) ──► starts when Run 1 completes ──► ✅
+Run 3: Queued (Not started) ──► starts when Run 2 completes ──► ✅
+ ...
+Run 16: Queued (Not started) ──► starts when Run 15 completes ──► ✅
+```
+
+Each run processes sequentially — no KQL throttling, no retries, no wasted capacity.
+
+### Concurrency comparison
+
+| Concurrency | KQL Throttling | Retries Needed | Behavior |
+|---|---|---|---|
+| **1** (recommended) | None | No | Runs serialize — reliable and predictable |
+| **5** | Frequent (4 of 5 hit 429) | Yes (retry 3 × 30s) | Faster start but wastes time on retries |
+| **Unlimited** (default) | Severe | Yes | All runs compete — most fail and retry |
+
+### Recommended settings
+
+| Setting | Value | Where |
+|---|---|---|
+| Pipeline concurrency | `1` | Pipeline → Settings tab → Concurrency |
+| Retry on `Recalculate Gold Summary` | `3` | Activity → Settings → Retry |
+| Retry interval (seconds) | `30` | Activity → Settings → Retry interval |
+
+> 💡 **Why both concurrency = 1 AND retry?** Belt and suspenders. Concurrency = 1 prevents most throttling, but if another pipeline or ad-hoc KQL command is running a control command at the same time, the retry catches it.
+
+### Setting retry on the Recalculate Gold Summary activity
+
+1. Click the `Recalculate Gold Summary` activity on the canvas.
+2. In the bottom pane, click the **Settings** tab.
+3. Set:
+
+| Setting | Value |
+|---|---|
+| Retry | `3` |
+| Retry interval (seconds) | `30` |
+
+> These settings mean: if `.set-or-append` fails (e.g. 429 throttling), wait 30 seconds and try again, up to 3 times.
+
+### Monitoring queued runs
+
+When concurrency = 1, you'll see queued runs in the **Monitoring hub** with status "Not started". This is normal — they're waiting for a slot, not failing. Each will execute in order as the previous run completes.
+
+To check: **Monitoring hub** → filter by `pl_ingest_DepositMovement` → you'll see:
+- 1 run with status **In Progress**
+- Remaining runs with status **Not started** (queued)
+- Completed runs with status **Succeeded**
