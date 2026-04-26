@@ -503,3 +503,54 @@ This way your data is clean and correct everywhere, and Thailand time is shown o
 | `pFileName` | Parameter | The event trigger (or manual run) tells the pipeline *which file* to process. Read-only during execution. |
 | `pFolder` | Parameter | The trigger tells the pipeline *which folder* to look in. Defaults to `incoming`. |
 | `vLoadTs` | Variable | The pipeline captures `@utcNow()` at the start via the `Set vLoadTs` activity, then reuses that same timestamp in Copy (`load_ts` column) and KQL (`sp_Recalculate_Summary_Alert_Channel`) — ensuring they always match. |
+
+---
+
+## Appendix C — Timezone Strategy (UTC vs Thailand Time)
+
+### Does Fabric have a workspace-level timezone setting?
+
+**No.** Fabric has **no workspace-level timezone configuration**. All internal timestamps — pipeline run times, audit logs, refresh history, KQL `now()` — are **always UTC**. This cannot be changed.
+
+### What if I store `load_ts` as UTC+7 (Thailand time)?
+
+You *could* change `vLoadTs` from `@utcNow()` to `@addHours(utcNow(), 7)`, but it causes cascading issues across the workshops:
+
+| Module | Impact | Severity |
+|---|---|---|
+| **Workshop 02 — KQL `DepositMovement`** | `load_ts` stores UTC+7, but KQL treats it as UTC. `ago(1h)` queries return wrong results. | **Breaking** |
+| **Workshop 03A — Stored function** | Exact match still works, but Gold table timestamps are UTC+7 while KQL `now()` is UTC. Any `where load_ts > ago(...)` query breaks. | **Breaking** |
+| **Workshop 03B — Materialized view** | `max(load_ts)` as `UpdatedAtUtc` now stores UTC+7 — column name is misleading. Freshness comparisons against `now()` are off by 7 hours. | **Confusing** |
+| **Workshop 04 — ProcessedFiles audit** | `IngestedAtUtc` (from `SYSUTCDATETIME()`) is real UTC, but `load_ts` in KQL is UTC+7. Two different "times" for the same event. | **Confusing** |
+| **Workshop 07 — Power BI** | Timestamps display as Thailand time (good!), but if someone adds +7 in DAX (standard practice), they get UTC+14. | **Breaking** |
+| **Workshop 08 — Activator alerts** | Alert conditions comparing against KQL `now()` are off by 7 hours. Alerts fire late or early. | **Breaking** |
+| **Workshop 09 — Monitoring** | Cross-referencing pipeline run times (UTC) with `load_ts` (UTC+7) creates confusion during incident triage. | **Confusing** |
+
+### Recommended approach: store UTC, convert at display
+
+Keep the pipeline as-is (`@utcNow()`). Convert to Thailand time only where humans read it:
+
+**Power BI (Workshop 07) — DAX calculated column:**
+
+```dax
+ThailandTime = [load_ts] + TIME(7, 0, 0)
+```
+
+Use `ThailandTime` in visuals; keep `load_ts` for relationships and calculations.
+
+**KQL queries (ad-hoc exploration):**
+
+```kusto
+DepositMovement
+| extend ThailandTime = load_ts + 7h
+| project ThailandTime, AccountNo, Channel, Amount_THB
+```
+
+**Activator alert messages (Workshop 08):**
+
+```kusto
+// Inside Activator KQL condition
+| extend AlertTime_TH = format_datetime(load_ts + 7h, 'yyyy-MM-dd HH:mm')
+```
+
+> **Rule of thumb:** Store UTC everywhere → convert to `+7h` only where humans see it. This keeps all 9 workshops consistent and avoids cascading bugs.
