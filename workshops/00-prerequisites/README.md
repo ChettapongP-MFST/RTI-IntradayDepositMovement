@@ -150,3 +150,99 @@ If custom-template deployment is restricted in your tenant, send the admin the s
 - [ ] **Resource instances** on the Networking blade lists the Fabric workspace
 
 → Proceed to **[Workshop 01 — Provision ADLS Gen2](../01-provision-adls-gen2/)**
+
+---
+
+## Appendix A — Mock Dataset Analysis
+
+The workshop uses 16 pre-generated CSV files in [`resources/datasets/`](../../resources/datasets/) to simulate intraday deposit movement data. This appendix describes the data structure, dimensions, and what to expect when the pipeline processes them.
+
+### File inventory
+
+| # | File | Time Window |
+|---|---|---|
+| 1 | `mock_0000_0030.csv` | 00:00-00:30 |
+| 2 | `mock_0030_0100.csv` | 00:30-01:00 |
+| 3 | `mock_0100_0130.csv` | 01:00-01:30 |
+| 4 | `mock_0130_0200.csv` | 01:30-02:00 |
+| 5 | `mock_0200_0230.csv` | 02:00-02:30 |
+| 6 | `mock_0230_0300.csv` | 02:30-03:00 |
+| 7 | `mock_0300_0330.csv` | 03:00-03:30 |
+| 8 | `mock_0330_0400.csv` | 03:30-04:00 |
+| 9 | `mock_0400_0430.csv` | 04:00-04:30 |
+| 10 | `mock_0430_0500.csv` | 04:30-05:00 |
+| 11 | `mock_0500_0530.csv` | 05:00-05:30 |
+| 12 | `mock_0530_0600.csv` | 05:30-06:00 |
+| 13 | `mock_0600_0630.csv` | 06:00-06:30 |
+| 14 | `mock_0630_0700.csv` | 06:30-07:00 |
+| 15 | `mock_0700_0730.csv` | 07:00-07:30 |
+| 16 | `mock_0730_0800.csv` | 07:30-08:00 |
+
+**Total:** 16 files × 24 rows = **384 rows** (all for date `2026-03-31`)
+
+### CSV columns
+
+| Column | Type | Example | Description |
+|---|---|---|---|
+| `Date` | date | `2026-03-31` | Business date |
+| `Time` | string | `00:00-00:30` | 30-minute time window |
+| `Product` | string | `Fixed` | Deposit product type |
+| `Channel` | string | `ATM` | Transaction channel |
+| `Channel_Group` | string | `Offline` | Channel grouping |
+| `Transaction_Type` | string | `On-Us` | On-Us or Off-Us |
+| `Credit_Amount` | integer | `940263` | Credit amount (THB) |
+| `Debit_Amount` | integer | `889524` | Debit amount (THB) |
+| `Net_Amount` | integer | `50739` | Credit − Debit (can be negative) |
+| `Credit_Txn` | integer | `15` | Number of credit transactions |
+| `Debit_Txn` | integer | `229` | Number of debit transactions |
+| `Total_Txn` | integer | `244` | Credit_Txn + Debit_Txn |
+
+### Dimensions — 24 rows per file
+
+Each file contains the **full cross-product** of 3 dimensions:
+
+| Dimension | Values | Count |
+|---|---|---|
+| **Product** | `Fixed`, `Saving`, `Current` | 3 |
+| **Channel** | `ATM`, `BCMS`, `ENET`, `TELL` | 4 |
+| **Transaction_Type** | `On-Us`, `Off-Us` | 2 |
+| **Total combinations** | 3 × 4 × 2 | **24** |
+
+### Channel → Channel_Group mapping
+
+| Channel | Channel_Group | Description |
+|---|---|---|
+| `ATM` | Offline | Automated Teller Machine |
+| `BCMS` | Online | Business Cash Management System |
+| `ENET` | Online | Electronic / Internet Banking |
+| `TELL` | Offline | Teller (branch counter) |
+
+### Numeric ranges
+
+| Column | Min | Max | Notes |
+|---|---|---|---|
+| `Credit_Amount` | 0 | ~1,008,682 | Can be zero |
+| `Debit_Amount` | 0 | ~989,024 | Can be zero |
+| `Net_Amount` | ~-830,793 | ~+544,534 | Negative = net outflow |
+| `Credit_Txn` | 12 | 299 | |
+| `Debit_Txn` | 11 | 300 | |
+| `Total_Txn` | 60 | 573 | |
+
+### Data integrity checks
+
+These relationships hold for **every row** across all 16 files:
+
+| Rule | Formula |
+|---|---|
+| Net = Credit − Debit | `Net_Amount = Credit_Amount − Debit_Amount` |
+| Total = Credit + Debit | `Total_Txn = Credit_Txn + Debit_Txn` |
+
+### Expected counts after full ingestion (all 16 files)
+
+| Table | Rows | Explanation |
+|---|---|---|
+| `DepositMovement` (Bronze) | **384** | 16 files × 24 rows |
+| `dbo.ProcessedFiles` (Audit) | **16** | 1 row per file (Status = Success) |
+| `Summary_Alert_Channel` (Gold) | **64** | 16 time windows × 4 channels |
+
+> The Gold table (`Summary_Alert_Channel`) groups by `Date + Time + Channel`, collapsing 3 products × 2 transaction types = 6 source rows into 1 Gold row per time window per channel.
