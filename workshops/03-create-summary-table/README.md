@@ -1,6 +1,6 @@
 # Workshop 03 — Create the Summary Table
 
-Create the **Gold aggregation layer** — a pre-aggregated summary table that stores daily channel-level summaries of deposit movements.
+Create the **Gold aggregation layer** — a pre-aggregated summary table that stores per-time-window channel-level summaries of deposit movements.
 
 ```
 Bronze (DepositMovement table) ──► Stored Procedure / Materialized View ──► Gold (Summary_Alert_Channel)
@@ -12,10 +12,10 @@ There are **two options** to build this. Choose one:
 |---|---|---|
 | **Mechanism** | Pipeline calls `.set-or-append` with a stored function | KQL auto-aggregates as new data arrives |
 | **Gold table name** | `Summary_Alert_Channel` (regular table) | `Summary_Alert_Channel_MV` (view) |
-| **Schema** | 7 columns (incl. `UpdatedAtUtc` via `now()`) | 7 columns (incl. `UpdatedAtUtc` via `max(load_ts)`) |
+| **Schema** | 8 columns (incl. `Time` + `UpdatedAtUtc` via `now()`) | 8 columns (incl. `Time` + `UpdatedAtUtc` via `max(load_ts)`) |
 | **Trigger** | Explicit — pipeline must call `.set-or-append <\| sp_...()` | Automatic — runs in the background, no pipeline step needed |
 | **Pipeline change** | Requires a "KQL Activity" step (Workshop 04) | No pipeline change needed |
-| **Rows per Date+Channel** | Multiple (appends each run — needs dedup) | Single (auto-merged) |
+| **Rows per Date+Time+Channel** | Multiple (appends each run — needs dedup) | Single (auto-merged) |
 | **Freshness tracking** | `UpdatedAtUtc = now()` — exact recalc time | `UpdatedAtUtc = max(load_ts)` — latest pipeline load time |
 | **Custom logic** | Full KQL flexibility (windowing, filtering, complex joins) | Limited to `summarize` aggregation functions |
 | **Ops overhead** | Must ensure pipeline calls function on every run | Zero — KQL manages it autonomously |
@@ -31,39 +31,40 @@ The table **grows** with each pipeline run. Stale rows from earlier runs remain;
 
 ```
 Summary_Alert_Channel (regular table)
-┌──────────┬─────────┬──────────────┬──────────────┐
-│  Date    │ Channel │ Credit_Total │ UpdatedAtUtc │
-├──────────┼─────────┼──────────────┼──────────────┤
-│  Day 5   │ ATM     │       50,000 │ 07:31 (stale)│  ← from 07:00-07:30 run
-│  Day 5   │ BCMS    │       30,000 │ 07:31 (stale)│
-│  Day 5   │ ENET    │       20,000 │ 07:31 (stale)│
-│  Day 5   │ ATM     │       65,000 │ 08:31 (latest) ✅│  ← from 08:00-08:30 run
-│  Day 5   │ BCMS    │       38,000 │ 08:31 (latest) ✅│
-│  Day 5   │ ENET    │       27,000 │ 08:31 (latest) ✅│
-└──────────┴─────────┴──────────────┴──────────────┘
-                                      6 rows (grows every run)
+┌──────────┬─────────────┬─────────┬──────────────┬──────────────┐
+│  Date    │ Time        │ Channel │ Credit_Total │ UpdatedAtUtc │
+├──────────┼─────────────┼─────────┼──────────────┼──────────────┤
+│  Day 5   │ 00:00-00:30 │ ATM     │       50,000 │ 07:31 (stale)│  ← from 07:00-07:30 run
+│  Day 5   │ 00:00-00:30 │ BCMS    │       30,000 │ 07:31 (stale)│
+│  Day 5   │ 00:00-00:30 │ ENET    │       20,000 │ 07:31 (stale)│
+│  Day 5   │ 00:00-00:30 │ ATM     │       65,000 │ 08:31 (latest) ✅│  ← from 08:00-08:30 run
+│  Day 5   │ 00:00-00:30 │ BCMS    │       38,000 │ 08:31 (latest) ✅│
+│  Day 5   │ 00:00-00:30 │ ENET    │       27,000 │ 08:31 (latest) ✅│
+└──────────┴─────────────┴─────────┴──────────────┴──────────────┘
+                                                    6 rows (grows every run)
 ```
 
-> ⚠️ To get the correct current totals, downstream queries must pick the **latest row** per Date+Channel:
+> ⚠️ To get the correct current totals, downstream queries must pick the **latest row** per Date+Time+Channel:
 > ```kusto
 > Summary_Alert_Channel
-> | summarize arg_max(UpdatedAtUtc, *) by Date, Channel
+> | summarize arg_max(UpdatedAtUtc, *) by Date, Time, Channel
 > ```
 
 #### Option B — Materialized View (single row, with timestamp)
 
-The view **auto-merges** — always one row per Date+Channel. No stale rows, no dedup needed. `UpdatedAtUtc` tracks the latest pipeline load time.
+The view **auto-merges** — always one row per Date+Time+Channel. No stale rows, no dedup needed. `UpdatedAtUtc` tracks the latest pipeline load time.
 
 ```
 Summary_Alert_Channel_MV (materialized view)
-┌──────────┬─────────┬──────────────┬──────────────────────┐
-│  Date    │ Channel │ Credit_Total │ UpdatedAtUtc         │
-├──────────┼─────────┼──────────────┼──────────────────────┤
-│  Day 5   │ ATM     │       65,000 │ 08:30 (latest load)  │  ← auto-merged (50k + 15k)
-│  Day 5   │ BCMS    │       38,000 │ 08:30 (latest load)  │  ← auto-merged (30k + 8k)
-│  Day 5   │ ENET    │       27,000 │ 08:30 (latest load)  │  ← auto-merged (20k + 7k)
-└──────────┴─────────┴──────────────┴──────────────────────┘
-                       3 rows (always)
+┌──────────┬─────────────┬─────────┬──────────────┬──────────────────────┐
+│  Date    │ Time        │ Channel │ Credit_Total │ UpdatedAtUtc         │
+├──────────┼─────────────┼─────────┼──────────────┼──────────────────────┤
+│  Day 5   │ 00:00-00:30 │ ATM     │       65,000 │ 08:30 (latest load)  │  ← auto-merged (50k + 15k)
+│  Day 5   │ 00:00-00:30 │ BCMS    │       38,000 │ 08:30 (latest load)  │  ← auto-merged (30k + 8k)
+│  Day 5   │ 00:00-00:30 │ ENET    │       27,000 │ 08:30 (latest load)  │  ← auto-merged (20k + 7k)
+└──────────┴─────────────┴─────────┴──────────────┴──────────────────────┘
+                           3 rows (always)
+```
 ```
 
 > 💡 **Workshop default:** This workshop uses **Option A** in the pipeline (Workshop 04). If you prefer Option B, skip the "KQL Activity" step in the pipeline and let the materialized view handle it automatically.
@@ -75,17 +76,18 @@ Summary_Alert_Channel_MV (materialized view)
 
 ## 3.1 Gold table schema (Summary_Alert_Channel)
 
-Both options produce the same Gold table. While `DepositMovement` stores **granular, row-level data** (per product, per channel, per time slot), this Gold table stores **daily channel-level summaries** — pre-aggregated for:
+Both options produce the same Gold table. While `DepositMovement` stores **granular, row-level data** (per product, per channel, per time slot), this Gold table stores **per-time-window channel-level summaries** — pre-aggregated for:
 
 - **Power BI reports** — dashboards query this table instead of scanning millions of raw rows, resulting in faster report load times
-- **Activator alerts** (Workshop 08) — threshold-based alerting on daily net amounts or transaction counts per channel
+- **Activator alerts** (Workshop 08) — threshold-based alerting on net amounts or transaction counts per time window per channel
 
 | Column | Type | Purpose |
 |---|---|---|
 | `Date` | datetime | Business date (e.g., 2026-04-24) |
+| `Time` | string | Time window (e.g., `00:00-00:30`) |
 | `Channel` | string | Channel dimension |
-| `Credit_Total` | real | Sum of Credit_Amount for that date+channel |
-| `Debit_Total` | real | Sum of Debit_Amount for that date+channel |
+| `Credit_Total` | real | Sum of Credit_Amount for that date+time+channel |
+| `Debit_Total` | real | Sum of Debit_Amount for that date+time+channel |
 | `Net_Amount` | real | Net (Credit - Debit) |
 | `Txn_Count` | real | Count of transactions |
 | `UpdatedAtUtc` | datetime | When the summary was last recalculated |
@@ -159,7 +161,7 @@ RecentDates
 
 **Why join back to the full table?** Because we want to re-aggregate **all rows for those dates** (not just the new rows). If `2026-04-24` already had data from earlier time slots and we just added `08:00-08:30`, the summary should reflect the entire day so far.
 
-#### Step 3 — Aggregate by Date + Channel
+#### Step 3 — Aggregate by Date + Time + Channel
 
 ```kql
 | summarize 
@@ -167,16 +169,16 @@ RecentDates
     Debit_Total = sum(Debit_Amount),
     Net_Amount = sum(Net_Amount),
     Txn_Count = sum(Total_Txn)
-    by Date, Channel
+    by Date, Time, Channel
 ```
 
-This collapses all granular rows (per product, per time slot, per transaction type) into **one row per Date + Channel**:
+This collapses all granular rows (per product, per time slot, per transaction type) into **one row per Date + Time + Channel**:
 
 | Before (Bronze — multiple rows) | After (Gold — one row) |
 |---|---|
-| `2026-04-24, ATM, Fixed, On-Us, 00:00-00:30` | `2026-04-24, ATM` → totals |
-| `2026-04-24, ATM, Fixed, Off-Us, 00:00-00:30` | *(merged into above)* |
-| `2026-04-24, ATM, Savings, On-Us, 00:30-01:00` | *(merged into above)* |
+| `2026-04-24, 00:00-00:30, ATM, Fixed, On-Us` | `2026-04-24, 00:00-00:30, ATM` → totals |
+| `2026-04-24, 00:00-00:30, ATM, Fixed, Off-Us` | *(merged into above)* |
+| `2026-04-24, 00:00-00:30, ATM, Savings, On-Us` | *(merged into above)* |
 
 #### Step 4 — Add timestamp and return
 
@@ -184,7 +186,7 @@ This collapses all granular rows (per product, per time slot, per transaction ty
 | extend UpdatedAtUtc = now()
 ```
 
-Stamps each aggregated row with the current UTC time, so you can tell **when** the Gold table was last refreshed for that Date + Channel.
+Stamps each aggregated row with the current UTC time, so you can tell **when** the Gold table was last refreshed for that Date + Time + Channel.
 
 > **Important — Kusto design principle:** The function body is a **pure query** — it returns a result set but does not write anything. Fabric Eventhouse does not support `.create procedure` or `insert into` inside function bodies. The write happens externally via `.set-or-append` (see below).
 
@@ -229,7 +231,7 @@ Step 1: RecentDates = rows where load_ts == vLoadTs → distinct Date = [2026-04
 Step 2: Join back → get ALL rows for 2026-04-24 (00:00 through 08:30)
   │
   ▼
-Step 3: Summarize → one row per Channel (ATM, BCMS, ENET, ...)
+Step 3: Summarize → one row per Time + Channel (ATM 00:00-00:30, BCMS 00:00-00:30, ...)
   │
   ▼
 Step 4: Stamp UpdatedAtUtc = 2026-04-24T08:31:00Z
@@ -291,7 +293,7 @@ New CSV file arrives
 |---|---|---|
 | **When does it run?** | Only when the pipeline calls `.set-or-append <\| sp_...()` | Automatically after every ingestion |
 | **What does it process?** | All rows for the affected dates (full-day re-aggregation) | Only new extents (truly incremental) |
-| **Deduplication** | Appends rows — needs `UpdatedAtUtc` filtering | Maintains a single row per `Date` + `Channel` |
+| **Deduplication** | Appends rows — needs `UpdatedAtUtc` filtering | Maintains a single row per `Date` + `Time` + `Channel` |
 | **`UpdatedAtUtc`** | `now()` — exact recalculation time | `max(load_ts)` — latest pipeline load time |
 | **Pipeline dependency** | Pipeline must include a KQL Activity step | No pipeline change needed |
 | **Failure recovery** | If the pipeline step fails, Gold table is stale | KQL retries automatically |
@@ -314,7 +316,7 @@ The script creates:
         Net_Amount   = sum(Net_Amount),
         Txn_Count    = sum(Total_Txn),
         UpdatedAtUtc = max(load_ts)
-        by Date, Channel
+        by Date, Time, Channel
 }
 ```
 
@@ -325,8 +327,8 @@ The script creates:
 | `.create materialized-view` | Creates a persistent aggregated view managed by KQL |
 | `with (backfill=true)` | Processes **all existing data** in `DepositMovement` immediately (not just future ingestions). Remove this if the table is empty at creation time. |
 | `on table DepositMovement` | Binds the view to the source table — KQL watches this table for new data |
-| `max(load_ts)` | Tracks the most recent pipeline load timestamp per Date+Channel (freshness proxy) |
-| `summarize ... by Date, Channel` | The aggregation query — same logic as the stored function, but KQL runs it automatically |
+| `max(load_ts)` | Tracks the most recent pipeline load timestamp per Date+Time+Channel (freshness proxy) |
+| `summarize ... by Date, Time, Channel` | The aggregation query — same logic as the stored function, but KQL runs it automatically |
 
 #### Why `max(load_ts)` instead of `now()`?
 
@@ -335,27 +337,27 @@ The script creates:
 | `now()` | ❌ No | Each extent is processed at a different time — `now()` would produce different values, preventing proper merge |
 | `max(load_ts)` | ✅ Yes | `load_ts` is a column value (set by the pipeline), and `max()` is a valid aggregation — KQL can merge it correctly |
 
-**What `max(load_ts)` tells you:** "The most recent data contributing to this Date+Channel aggregation was loaded at this time." This is slightly different from Option A's `now()` (which says "the recalculation happened at this time"), but serves the same purpose for freshness tracking.
+**What `max(load_ts)` tells you:** "The most recent data contributing to this Date+Time+Channel aggregation was loaded at this time." This is slightly different from Option A's `now()` (which says "the recalculation happened at this time"), but serves the same purpose for freshness tracking.
 
 #### How KQL processes it internally
 
 1. **Initial backfill** — When created with `backfill=true`, KQL aggregates all existing rows in `DepositMovement` into the view
 2. **Incremental updates** — After each ingestion, KQL identifies the new **extents** (data batches) and runs the `summarize` query on only those rows
 3. **Merge** — New aggregations are merged with existing results. For `sum()`, this means adding the new values to the existing totals. For `max()`, it picks the latest `load_ts`.
-4. **Single row per key** — Unlike Option A (which appends), the materialized view maintains exactly **one row per `Date` + `Channel`**
+4. **Single row per key** — Unlike Option A (which appends), the materialized view maintains exactly **one row per `Date` + `Time` + `Channel`**
 
 #### How the merge works
 
 ```
 Existing state (before 08:00-08:30):
-  Day 5 + ATM → Credit_Total=50,000, UpdatedAtUtc=2026-04-24T07:30:00Z
+  Day 5 + 00:00-00:30 + ATM → Credit_Total=50,000, UpdatedAtUtc=2026-04-24T07:30:00Z
 
 New extent (08:00-08:30):
-  Day 5 + ATM → sum(Credit_Amount)=15,000, max(load_ts)=2026-04-24T08:30:00Z
+  Day 5 + 00:00-00:30 + ATM → sum(Credit_Amount)=15,000, max(load_ts)=2026-04-24T08:30:00Z
 
 After merge:
-  Day 5 + ATM → Credit_Total=65,000, UpdatedAtUtc=2026-04-24T08:30:00Z
-                 (sum adds up)          (max picks the latest)
+  Day 5 + 00:00-00:30 + ATM → Credit_Total=65,000, UpdatedAtUtc=2026-04-24T08:30:00Z
+                               (sum adds up)          (max picks the latest)
 ```
 
 Both `sum()` and `max()` are **mergeable aggregation functions** — KQL can combine partial results without re-reading old data.
@@ -400,11 +402,11 @@ To check materialization health and lag:
 ## ✅ Exit Criteria
 
 **If you chose Option A:**
-- [ ] Gold table `Summary_Alert_Channel` exists with 7 columns
+- [ ] Gold table `Summary_Alert_Channel` exists with 8 columns
 - [ ] Stored function `sp_Recalculate_Summary_Alert_Channel` exists (verify: `.show function sp_Recalculate_Summary_Alert_Channel`)
 
 **If you chose Option B:**
-- [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy (7 columns including `UpdatedAtUtc`)
+- [ ] Materialized view `Summary_Alert_Channel_MV` exists and is healthy (8 columns including `Time` and `UpdatedAtUtc`)
 - [ ] `backfill=true` processed existing data (if any)
 
 → Proceed to **[Workshop 04 — Data Pipeline](../04-data-pipeline/)**

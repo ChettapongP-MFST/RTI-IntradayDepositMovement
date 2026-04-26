@@ -20,5 +20,5 @@
         Net_Amount   = sum(Net_Amount),
         Txn_Count    = sum(Total_Txn),
         UpdatedAtUtc = max(load_ts)
-        by Date, Channel
+        by Date, Time, Channel
 }

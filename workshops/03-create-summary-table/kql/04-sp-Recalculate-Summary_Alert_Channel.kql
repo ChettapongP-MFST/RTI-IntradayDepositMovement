@@ -20,7 +20,7 @@ sp_Recalculate_Summary_Alert_Channel(pipeline_load_ts: datetime)
         | where load_ts == pipeline_load_ts
         | distinct Date;
 
-    // Step 2: For each date in the batch, aggregate by Channel
+    // Step 2: For each date in the batch, aggregate by Time + Channel
     RecentDates
     | join kind=inner DepositMovement on Date
     | summarize 
@@ -28,7 +28,7 @@ sp_Recalculate_Summary_Alert_Channel(pipeline_load_ts: datetime)
         Debit_Total = sum(Debit_Amount),
         Net_Amount = sum(Net_Amount),
         Txn_Count = sum(Total_Txn)
-        by Date, Channel
+        by Date, Time, Channel
     | extend UpdatedAtUtc = now()
 }
 

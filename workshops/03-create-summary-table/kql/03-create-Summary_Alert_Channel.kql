@@ -3,6 +3,7 @@
 
 .create table Summary_Alert_Channel (
     Date: datetime,
+    Time: string,
     Channel: string,
     Credit_Total: real,
     Debit_Total: real,
@@ -10,17 +11,6 @@
     Txn_Count: long,
     UpdatedAtUtc: datetime
 )
-
-.create table Summary_Alert_Channel ingestion csv mapping 'Summary_Alert_Channel_mapping'
-[
-  {"Column":"Date",          "Properties":{"Ordinal":"0"}},
-  {"Column":"Channel",       "Properties":{"Ordinal":"1"}},
-  {"Column":"Credit_Total",  "Properties":{"Ordinal":"2"}},
-  {"Column":"Debit_Total",   "Properties":{"Ordinal":"3"}},
-  {"Column":"Net_Amount",    "Properties":{"Ordinal":"4"}},
-  {"Column":"Txn_Count",     "Properties":{"Ordinal":"5"}},
-  {"Column":"UpdatedAtUtc",  "Properties":{"Ordinal":"6"}}
-]
 
 // Enable streaming ingestion for low-latency updates
 .alter table Summary_Alert_Channel policy streamingingestion enable
