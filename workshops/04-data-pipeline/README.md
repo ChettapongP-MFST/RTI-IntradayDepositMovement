@@ -321,8 +321,7 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 
 **Mapping tab:**
 
-1. Click **Import schemas** to auto-detect source columns from a sample CSV.
-2. Verify all 12 CSV columns + 4 additional columns map to the correct target columns.
+> **Skip this tab.** Since you specified `DepositMovement_mapping` in the Destination tab, KQL handles column mapping server-side. The **Import schemas** button will fail here because the Source file path uses dynamic expressions that can't be resolved at design time — this is normal. Leave the Mapping tab empty.
 
 **Settings tab (advanced):**
 
