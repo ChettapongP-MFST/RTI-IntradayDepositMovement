@@ -227,12 +227,12 @@ Checks the Warehouse audit table to see if this file was already processed.
 
 **Settings tab:**
 
-1. Click **Connection** → **+ New** → search for **Warehouse** → select your `wh_rti_control` warehouse.
+1. Click **Connection** → **+ New** → search for **Warehouse** → select your `wh_control_framework` warehouse.
 2. Fill in:
 
 | Setting | Value |
 |---|---|
-| Connection | `wh_rti_control` |
+| Connection | `wh_control_framework` |
 | Use query | **Query** |
 | Query | *(see below)* |
 | First row only | ✅ Checked |
@@ -353,7 +353,7 @@ Still inside the **True** branch:
 
 | Setting | Value |
 |---|---|
-| Connection | Select the **Warehouse** connection → `wh_rti_control` |
+| Connection | Select the **Warehouse** connection → `wh_control_framework` |
 | Script type | **NonQuery** |
 | Script | **Add dynamic content** → paste the following: |
 
@@ -391,7 +391,7 @@ VALUES (
 
 | Setting | Value |
 |---|---|
-| Connection | `wh_rti_control` |
+| Connection | `wh_control_framework` |
 | Script type | **NonQuery** |
 | Script | **Add dynamic content** → paste the following: |
 
@@ -459,7 +459,7 @@ Click the ✏️ **pencil icon** on the **False** branch to open it.
 
 | Setting | Value |
 |---|---|
-| Connection | `wh_rti_control` |
+| Connection | `wh_control_framework` |
 | Script type | **NonQuery** |
 | Script | **Add dynamic content** → paste the following: |
 
