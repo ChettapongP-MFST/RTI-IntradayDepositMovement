@@ -544,6 +544,104 @@ SELECT * FROM dbo.ProcessedFiles;
 
 > A second row appears with `Status = Skipped-Duplicate` and `RowCount_ = 0` — proving the idempotency check works.
 
+### 4.6 Clean up test data
+
+After completing manual testing, clean up all test data so the environment is fresh for Workshop 05 (Event Trigger). Run these scripts in order.
+
+> ⚠️ **Run these only after you have verified the pipeline works.** Once cleaned, you'll need to re-run the pipeline to get data back.
+
+#### Step 1 — Drop and recreate `Summary_Alert_Channel_MV` (KQL — Option B only)
+
+If you chose **Option B** (materialized view) in Workshop 03, the materialized view must be dropped **before** clearing the source table, then recreated after.
+
+In the **KQL Database query editor**:
+
+```kusto
+// Drop the materialized view first (it depends on DepositMovement)
+.drop materialized-view Summary_Alert_Channel_MV ifexists
+```
+
+> Skip this step if you chose Option A (stored function + regular table).
+
+#### Step 2 — Clear `Summary_Alert_Channel` (KQL — Option A only)
+
+If you chose **Option A** (stored function + regular table) in Workshop 03:
+
+```kusto
+// Clear the Gold summary table
+.clear table Summary_Alert_Channel data
+```
+
+> Skip this step if you chose Option B (materialized view) — it was already dropped in Step 1.
+
+#### Step 3 — Clear `DepositMovement` (KQL)
+
+```kusto
+// Clear all rows from the business table
+.clear table DepositMovement data
+```
+
+Verify:
+
+```kusto
+DepositMovement | count
+// Expected: Count = 0
+```
+
+#### Step 4 — Recreate `Summary_Alert_Channel_MV` (KQL — Option B only)
+
+If you dropped the materialized view in Step 1, recreate it now (it will be empty since the source table is empty):
+
+```kusto
+// Recreate the materialized view (from Workshop 03, kql/05-create-Summary_Alert_Channel_MV.kql)
+.create materialized-view with (backfill=true) Summary_Alert_Channel_MV on table DepositMovement
+{
+    DepositMovement
+    | summarize
+        Credit_Total  = sum(Credit_Amount),
+        Debit_Total   = sum(Debit_Amount),
+        Credit_Txn    = sum(Credit_Txn),
+        Debit_Txn     = sum(Debit_Txn),
+        UpdatedAtUtc  = max(load_ts)
+      by Date, Channel
+}
+```
+
+Verify:
+
+```kusto
+Summary_Alert_Channel_MV | count
+// Expected: Count = 0
+```
+
+#### Step 5 — Clear `dbo.ProcessedFiles` (Warehouse — T-SQL)
+
+In the **Warehouse SQL query editor**:
+
+```sql
+-- Delete all test rows from the audit table
+DELETE FROM dbo.ProcessedFiles;
+```
+
+Verify:
+
+```sql
+SELECT COUNT(*) AS Rows_ FROM dbo.ProcessedFiles;
+-- Expected: Rows_ = 0
+```
+
+#### Clean-up summary
+
+| Step | Target | Engine | Command | Option |
+|---|---|---|---|---|
+| 1 | `Summary_Alert_Channel_MV` | KQL | `.drop materialized-view ... ifexists` | Option B only |
+| 2 | `Summary_Alert_Channel` | KQL | `.clear table ... data` | Option A only |
+| 3 | `DepositMovement` | KQL | `.clear table ... data` | Both |
+| 4 | `Summary_Alert_Channel_MV` | KQL | `.create materialized-view ...` | Option B only |
+| 5 | `dbo.ProcessedFiles` | T-SQL | `DELETE FROM ...` | Both |
+
+> 💡 **Why this order?** The materialized view depends on `DepositMovement`. KQL won't let you clear a source table while a materialized view references it — you must drop the view first, clear the data, then recreate it. For Option A (regular table), `Summary_Alert_Channel` is independent so it can be cleared in any order.
+
 ## ✅ Exit Criteria
 
 - [ ] Pipeline succeeds end-to-end
