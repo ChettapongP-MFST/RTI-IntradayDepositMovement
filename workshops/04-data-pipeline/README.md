@@ -319,19 +319,21 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 | Table | `DepositMovement` (select from the dropdown) |
 | Ingestion mapping name | Type `DepositMovement_mapping` (this is a **free-text field** below the Advanced section — not a dropdown. Type the name exactly.) |
 
+Still on the **Destination tab**, expand **Additional properties** → click **+ New** to add the ingestion tag:
+
+| Key | Value |
+|---|---|
+| `ingest-by` | Click the **Value** text box → **Add dynamic content** → type: `ingest-by:@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}` → **OK** |
+
+> The `ingest-by` tag is a server-side dedup safety net in KQL. If the same tag already exists, KQL will reject the duplicate ingestion.
+
 **Mapping tab:**
 
 > **Skip this tab.** Since you specified `DepositMovement_mapping` in the Destination tab, KQL handles column mapping server-side. The **Import schemas** button will fail here because the Source file path uses dynamic expressions that can't be resolved at design time — this is normal. Leave the Mapping tab empty.
 
-**Settings tab (advanced):**
+**Settings tab:**
 
-Scroll to **Advanced settings** or **Ingestion properties**:
-
-| Setting | Value |
-|---|---|
-| Ingestion tag | **Add dynamic content** → `ingest-by:@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}` |
-
-> The `ingest-by` tag is a server-side dedup safety net in KQL. If the same tag already exists, KQL will reject the duplicate ingestion.
+> No changes needed on this tab. Leave defaults.
 
 ---
 
