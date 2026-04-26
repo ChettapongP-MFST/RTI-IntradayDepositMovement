@@ -15,14 +15,15 @@ Before clicking anything in Fabric, let's understand every component you'll crea
 
 | Component | What it is | Why we need it |
 |---|---|---|
-| **Pipeline parameters** (`pFileName`, `pFolder`) | Inputs passed *into* the pipeline by the caller (trigger or manual run) | The pipeline needs to know **which file** to process and **where** it is. Without parameters, you'd have to hard-code file names — impossible for an event-driven pipeline. |
-| **Pipeline variable** (`vLoadTs`) | A value computed *during* the pipeline run | We need a **single timestamp** shared across multiple activities (Copy + KQL). If each activity called `utcNow()` separately, they'd get different timestamps — and the KQL function wouldn't find the rows it just ingested. |
+| **Pipeline parameters** (`pFileName`, `pFolder`, `Subject`) | Inputs passed *into* the pipeline by the caller (trigger or manual run) | The pipeline needs to know **which file** to process and **where** it is. `Subject` receives the full blob path from the event trigger; `pFileName` is used for manual runs. |
+| **Pipeline variables** (`vLoadTs`, `vFileName`) | Values computed *during* the pipeline run | `vLoadTs` freezes a single UTC timestamp shared across all activities. `vFileName` extracts just the filename from the trigger's `Subject` path (or falls back to `pFileName` for manual runs). |
 
 ### Activities (in execution order)
 
 | # | Activity | Type | Purpose |
 |---|---|---|---|
 | **0** | `Set vLoadTs` | Set Variable | **Freeze the clock.** Captures `@utcNow()` once so every downstream activity uses the exact same timestamp. Without this, Copy and KQL would have different `load_ts` values. |
+| **0b** | `Set vFileName` | Set Variable | **Resolve filename.** Extracts the filename from the trigger's `Subject` path, or falls back to `pFileName` for manual runs. All downstream activities reference `vFileName` instead of repeating the extraction logic. |
 | **1** | `Get Metadata` | Get Metadata | **Defensive check — does the file actually exist?** Returns `exists`, `size`, `lastModified`. Catches race conditions where the trigger fires but the file isn't fully written yet. Also provides retry (2 × 30s) for transient storage hiccups. |
 | **2** | `Lookup ProcessedFiles` | Lookup | **Duplicate guard.** Queries the Warehouse audit table: *"Has this file already been successfully processed?"* Returns one row (duplicate) or empty (new file). This is the **application-level idempotency** check. |
 | **3** | `If Condition` | If Condition | **Router.** Evaluates `@equals(Lookup.output.count, 0)` — `true` = new file (go load it), `false` = duplicate (skip and audit). Splits the pipeline into two branches. |
@@ -45,19 +46,22 @@ Before clicking anything in Fabric, let's understand every component you'll crea
 ### How they work together
 
 ```
-Trigger fires with file name
+Trigger fires with Subject (full blob path)
         │
         ▼
-   [Parameters receive file name]
+   [Parameters receive Subject, or pFileName for manual run]
         │
         ▼
-   [Set vLoadTs] ─── freeze timestamp for consistency
+   [Set vLoadTs] ──── freeze timestamp for consistency
         │
         ▼
-   [Get Metadata] ── does file exist? (defensive)
+   [Set vFileName] ── extract filename from Subject (or use pFileName)
         │
         ▼
-   [Lookup] ──────── already processed? (idempotency)
+   [Get Metadata] ─── does file exist? (defensive)
+        │
+        ▼
+   [Lookup] ───────── already processed? (idempotency)
         │
         ▼
    [If Condition]
@@ -88,23 +92,29 @@ Before building activities, set up the parameters and variables the pipeline wil
 
 1. Click anywhere on the **canvas background** (not on an activity).
 2. In the bottom pane, click the **Parameters** tab.
-3. Click **+ New** and create two parameters:
+3. Click **+ New** and create three parameters:
 
 | Name | Type | Default Value |
 |---|---|---|
 | `pFileName` | String | *(leave empty)* |
 | `pFolder` | String | `incoming` |
+| `Subject` | String | *(leave empty)* |
+
+> `Subject` receives the full blob path from the event trigger (e.g. `/blobServices/default/containers/intraday-deposits/blobs/incoming/mock_0030_0100.csv`). For manual runs, leave it empty — the pipeline falls back to `pFileName`.
 
 ### 4.2.2 Create pipeline variables
 
 1. In the same bottom pane, click the **Variables** tab.
-2. Click **+ New** and create one variable:
+2. Click **+ New** and create two variables:
 
 | Name | Type | Default Value |
 |---|---|---|
 | `vLoadTs` | String | *(leave empty)* |
+| `vFileName` | String | *(leave empty)* |
 
 > `vLoadTs` will capture `@utcNow()` at the start of each run. The same timestamp is used as `load_ts` in the Copy activity and passed to the Gold recalculation function — ensuring they always match.
+>
+> `vFileName` will hold just the filename (e.g. `mock_0030_0100.csv`), extracted from the trigger's `Subject` path or taken directly from `pFileName` for manual runs.
 
 ---
 
@@ -114,6 +124,9 @@ Here's the complete pipeline flow you'll build:
 
 ```
 [Set vLoadTs]
+      │
+      ▼
+[Set vFileName]
       │
       ▼
 [Get Metadata]
@@ -166,12 +179,45 @@ Captures a single UTC timestamp for the entire pipeline run.
 
 ---
 
+### 4.4.0b Activity: `Set vFileName`
+
+Extracts just the filename from the trigger's `Subject` path, or falls back to `pFileName` for manual runs.
+
+1. **Activities** tab → click **Set variable**.
+2. Drag a **green arrow** (On Success) from `Set vLoadTs` → `Set vFileName`.
+
+**General tab:**
+
+| Setting | Value |
+|---|---|
+| Name | `Set vFileName` |
+
+**Settings tab:**
+
+| Setting | Value |
+|---|---|
+| Variable type | Pipeline variable |
+| Name | `vFileName` |
+| Value | Click the text box → click **Add dynamic content** → paste: |
+
+```
+@replace(coalesce(pipeline().parameters.Subject, pipeline().parameters.pFileName), '/blobServices/default/containers/intraday-deposits/blobs/incoming/', '')
+```
+
+> **How this works:**
+> - **Trigger run:** `Subject` contains the full blob path (e.g. `/blobServices/default/containers/.../mock_0030_0100.csv`). `replace()` strips the known prefix, leaving just `mock_0030_0100.csv`.
+> - **Manual run:** `Subject` is empty, so `coalesce()` falls back to `pFileName`. The `replace()` finds nothing to strip and returns the filename as-is.
+>
+> ⚠️ **Why not `last(split(...))`?** Fabric's expression engine cannot handle array-to-string conversion in `last(split())` — it returns `"Cannot fit string list item into the function parameter string"`. The `replace()` approach avoids this limitation.
+
+---
+
 ### 4.4.1 Activity: `Get Metadata`
 
 Verifies the file exists in ADLS Gen2 before attempting ingestion.
 
 1. **Activities** tab → click **Get metadata**.
-2. Drag a **green arrow** (On Success) from `Set vLoadTs` → `Get Metadata`.
+2. Drag a **green arrow** (On Success) from `Set vFileName` → `Get Metadata`.
 
 **General tab:**
 
@@ -205,10 +251,10 @@ After the connection is created:
 | Connection | *(the ADLS Gen2 connection you just created)* |
 | File path — Container | `intraday-deposits` |
 | File path — Directory | Click text box → **Add dynamic content** → `@pipeline().parameters.pFolder` |
-| File path — File name | Click text box → **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| File path — File name | Click text box → **Add dynamic content** → `@variables('vFileName')` |
 | Field list | Click **+ New** three times and select: `exists`, `size`, `lastModified` |
 
-> **Why `coalesce(...)`?** When the pipeline is triggered by an event (Workshop 05), the file name comes from `pipeline()?.TriggerEvent?.FileName`. For manual runs, it falls back to the `pFileName` parameter.
+> **Why `@variables('vFileName')`?** The `Set vFileName` activity (4.4.0b) already resolved the filename from the trigger's `Subject` path or from `pFileName`. All downstream activities simply reference the variable — no need to repeat the extraction logic.
 
 ---
 
@@ -244,7 +290,7 @@ Checks the Warehouse audit table to see if this file was already processed.
 ```sql
 SELECT TOP (1) FileName
 FROM dbo.ProcessedFiles
-WHERE FileName = '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}'
+WHERE FileName = '@{variables('vFileName')}'
   AND Status   = 'Success';
 ```
 
@@ -300,7 +346,7 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 | Connection | *(select the ADLS Gen2 connection created in 4.4.1)* |
 | File path — Container | `intraday-deposits` |
 | File path — Directory | **Add dynamic content** → `@pipeline().parameters.pFolder` |
-| File path — File name | **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| File path — File name | **Add dynamic content** → `@variables('vFileName')` |
 | File format | **DelimitedText** |
 | First row as header | ✅ Checked |
 
@@ -309,7 +355,7 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 | Name | Value |
 |---|---|
 | `load_ts` | **Add dynamic content** → `@variables('vLoadTs')` |
-| `file_name` | **Add dynamic content** → `@coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)` |
+| `file_name` | **Add dynamic content** → `@variables('vFileName')` |
 | `pipeline_name` | **Add dynamic content** → `@pipeline().Pipeline` |
 | `pipeline_runid` | **Add dynamic content** → `@pipeline().RunId` |
 
@@ -360,7 +406,7 @@ Still inside the **True** branch:
 INSERT INTO dbo.ProcessedFiles
     (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
 VALUES (
-    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    '@{variables('vFileName')}',
     SYSUTCDATETIME(),
     @{activity('Copy CSV to Eventhouse').output.rowsCopied},
     'Success',
@@ -398,7 +444,7 @@ VALUES (
 INSERT INTO dbo.ProcessedFiles
     (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
 VALUES (
-    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    '@{variables('vFileName')}',
     SYSUTCDATETIME(),
     0,
     'Failed',
@@ -468,7 +514,7 @@ Click the ✏️ **pencil icon** on the **False** branch to open it.
 INSERT INTO dbo.ProcessedFiles
     (FileName, IngestedAtUtc, RowCount_, Status, PipelineName, PipelineRunId, RunAsUser, ErrorMsg)
 VALUES (
-    '@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}',
+    '@{variables('vFileName')}',
     SYSUTCDATETIME(),
     0,
     'Skipped-Duplicate',
@@ -486,7 +532,7 @@ Click **← Back** to return to the main canvas.
 ## 4.5 Save and test manually
 
 1. Upload one CSV (e.g. `mock_0000_0030.csv`) to `intraday-deposits/incoming/` (using the temporarily-allow-listed IP from Workshop 01.4).
-2. Run the pipeline with `pFileName = mock_0000_0030.csv` and `pFolder = incoming`.
+2. Run the pipeline with `pFileName = mock_0000_0030.csv`, `pFolder = incoming`, and `Subject` left empty.
 3. Verify:
    - `DepositMovement` (KQL) has new rows with the 4 lineage columns populated — `DepositMovement | count`.
    - `dbo.ProcessedFiles` (Warehouse) has **1** `Success` row — `SELECT TOP (5) * FROM dbo.ProcessedFiles ORDER BY IngestedAtUtc DESC;`.
@@ -696,9 +742,11 @@ This way your data is clean and correct everywhere, and Thailand time is shown o
 
 | Name | Type | Why |
 |---|---|---|
-| `pFileName` | Parameter | The event trigger (or manual run) tells the pipeline *which file* to process. Read-only during execution. |
-| `pFolder` | Parameter | The trigger tells the pipeline *which folder* to look in. Defaults to `incoming`. |
+| `pFileName` | Parameter | Used for manual runs — you type the file name to process. Ignored when `Subject` is provided by the trigger. |
+| `pFolder` | Parameter | The folder to look in. Defaults to `incoming`. |
+| `Subject` | Parameter | Receives the full blob path from the event trigger (e.g. `/blobServices/default/containers/.../mock_0030_0100.csv`). Empty for manual runs. |
 | `vLoadTs` | Variable | The pipeline captures `@utcNow()` at the start via the `Set vLoadTs` activity, then reuses that same timestamp in Copy (`load_ts` column) and KQL (`sp_Recalculate_Summary_Alert_Channel`) — ensuring they always match. |
+| `vFileName` | Variable | Computed by `Set vFileName` — extracts just the filename from `Subject` using `replace()`, or falls back to `pFileName` for manual runs. All downstream activities reference this variable. |
 
 ---
 
