@@ -319,13 +319,7 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 | Table | `DepositMovement` (select from the dropdown) |
 | Ingestion mapping name | Type `DepositMovement_mapping` (this is a **free-text field** below the Advanced section — not a dropdown. Type the name exactly.) |
 
-Still on the **Destination tab**, expand **Additional properties** → click **+ New** to add the ingestion tag:
-
-| Key | Value |
-|---|---|
-| `ingest-by` | Click the **Value** text box → **Add dynamic content** → type: `ingest-by:@{coalesce(pipeline()?.TriggerEvent?.FileName, pipeline().parameters.pFileName)}` → **OK** |
-
-> The `ingest-by` tag is a server-side dedup safety net in KQL. If the same tag already exists, KQL will reject the duplicate ingestion.
+> 💡 **Optional — `ingest-by` tag:** The Additional properties section (`+ New`) can accept a KQL `ingest-by` tag as a third dedup layer. This is an advanced optimization — skip it for now. The pipeline already has two dedup layers (Lookup + If Condition), which are sufficient. You can add `ingest-by` later if needed.
 
 **Mapping tab:**
 
