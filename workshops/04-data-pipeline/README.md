@@ -7,6 +7,69 @@ Build the Fabric Data Pipeline that ingests one CSV per run into the KQL table `
 
 ---
 
+## 4.0 What we're building and why
+
+Before clicking anything in Fabric, let's understand every component you'll create and **why** it exists.
+
+### Pipeline-level components
+
+| Component | What it is | Why we need it |
+|---|---|---|
+| **Pipeline parameters** (`pFileName`, `pFolder`) | Inputs passed *into* the pipeline by the caller (trigger or manual run) | The pipeline needs to know **which file** to process and **where** it is. Without parameters, you'd have to hard-code file names — impossible for an event-driven pipeline. |
+| **Pipeline variable** (`vLoadTs`) | A value computed *during* the pipeline run | We need a **single timestamp** shared across multiple activities (Copy + KQL). If each activity called `utcNow()` separately, they'd get different timestamps — and the KQL function wouldn't find the rows it just ingested. |
+
+### Activities (in execution order)
+
+| # | Activity | Type | Purpose |
+|---|---|---|---|
+| **0** | `Set vLoadTs` | Set Variable | **Freeze the clock.** Captures `@utcNow()` once so every downstream activity uses the exact same timestamp. Without this, Copy and KQL would have different `load_ts` values. |
+| **1** | `Get Metadata` | Get Metadata | **Defensive check — does the file actually exist?** Returns `exists`, `size`, `lastModified`. Catches race conditions where the trigger fires but the file isn't fully written yet. Also provides retry (2 × 30s) for transient storage hiccups. |
+| **2** | `Lookup ProcessedFiles` | Lookup | **Duplicate guard.** Queries the Warehouse audit table: *"Has this file already been successfully processed?"* Returns one row (duplicate) or empty (new file). This is the **application-level idempotency** check. |
+| **3** | `If Condition` | If Condition | **Router.** Evaluates `@empty(Lookup.output.firstRow)` — `true` = new file (go load it), `false` = duplicate (skip and audit). Splits the pipeline into two branches. |
+
+### True branch (new file)
+
+| # | Activity | Type | Purpose |
+|---|---|---|---|
+| **3a** | `Copy CSV to Eventhouse` | Copy Data | **The actual data ingestion.** Reads CSV from ADLS Gen2, injects 4 lineage columns (`load_ts`, `file_name`, `pipeline_name`, `pipeline_runid`), writes to KQL `DepositMovement` table. The `ingest-by` tag provides a **server-side dedup** safety net in KQL. |
+| **3b** | `Append Success` | Script | **Audit trail — success.** Writes a row to `ProcessedFiles` with `Status = 'Success'` and the row count. This is what `Lookup ProcessedFiles` checks in future runs to prevent duplicates. |
+| **3c** | `Append Failed` | Script | **Audit trail — failure.** Fires only if Copy fails (red arrow). Writes `Status = 'Failed'` with the error message. A failed file is **not** marked as processed, so the next trigger retry will attempt it again. |
+| **3d** | `Recalculate Gold Summary` | KQL Activity | **Gold layer refresh** (Option A only). Calls the stored function with the exact `vLoadTs` to re-aggregate only the affected dates. Skipped if you use Option B (materialized view). |
+
+### False branch (duplicate)
+
+| # | Activity | Type | Purpose |
+|---|---|---|---|
+| **3e** | `Append Skipped-Duplicate` | Script | **Audit trail — skip.** Writes `Status = 'Skipped-Duplicate'` so you have a record that the pipeline ran but correctly decided not to re-ingest. Useful for monitoring and debugging. |
+
+### How they work together
+
+```
+Trigger fires with file name
+        │
+        ▼
+   [Parameters receive file name]
+        │
+        ▼
+   [Set vLoadTs] ─── freeze timestamp for consistency
+        │
+        ▼
+   [Get Metadata] ── does file exist? (defensive)
+        │
+        ▼
+   [Lookup] ──────── already processed? (idempotency)
+        │
+        ▼
+   [If Condition]
+    ├─ New file:   Copy → Audit Success → Recalculate Gold
+    │                └─ On Failure → Audit Failed (allows retry)
+    └─ Duplicate:  Audit Skipped (no data touched)
+```
+
+> **The design goal:** the pipeline can be triggered **any number of times** for the same file and will produce the **exact same result** — one copy of the data, one success audit row, and zero errors. This is what "**idempotent**" means.
+
+---
+
 ## 4.1 Create the pipeline
 
 1. Open your **Fabric workspace**.
