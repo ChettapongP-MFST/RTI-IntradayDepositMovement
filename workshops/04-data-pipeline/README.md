@@ -362,7 +362,7 @@ VALUES (
     'Success',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
+    'Pipeline',
     NULL
 );
 ```
