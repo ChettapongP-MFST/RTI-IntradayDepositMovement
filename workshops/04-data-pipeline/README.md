@@ -311,13 +311,13 @@ Click the ✏️ **pencil icon** on the **True** branch to open it.
 
 > These four columns are **not** in the CSV — they're injected by the pipeline to provide lineage. Every row ingested will have these values.
 
-**Sink (Destination) tab:**
+**Destination tab:**
 
 | Setting | Value |
 |---|---|
 | Connection | Click **+ New** → search for **KQL Database** → select your `DepositMovement` KQL database |
-| Table | `DepositMovement` |
-| Ingestion mapping name | `DepositMovement_mapping` |
+| Table | `DepositMovement` (select from the dropdown) |
+| Ingestion mapping name | Type `DepositMovement_mapping` (this is a **free-text field** below the Advanced section — not a dropdown. Type the name exactly.) |
 
 **Mapping tab:**
 
