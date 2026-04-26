@@ -400,7 +400,7 @@ VALUES (
     'Failed',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
+    'Pipeline',
     '@{replace(activity(''Copy CSV to Eventhouse'').error.message, '''', '''''''')}'
 );
 ```
@@ -468,7 +468,7 @@ VALUES (
     'Skipped-Duplicate',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
+    'Pipeline',
     NULL
 );
 ```
