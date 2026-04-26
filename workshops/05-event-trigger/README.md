@@ -114,7 +114,7 @@ Back on the **"Add rule"** panel, verify:
 
 > 💡 **About `__subject`:** The `Subject` parameter receives the full blob path, e.g.  
 > `/blobServices/default/containers/intraday-deposits/blobs/incoming/mock_0030_0100.csv`  
-> The pipeline extracts just the filename using `@last(split(pipeline().parameters.Subject, '/'))`.
+> The pipeline's `Set vFileName` activity (Workshop 04, section 4.4.0b) extracts just the filename using `replace(coalesce(Subject, pFileName), '...incoming/', '')` → `mock_0030_0100.csv`.
 
 ## 5.5 Save location and create
 
