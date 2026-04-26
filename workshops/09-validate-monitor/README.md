@@ -55,3 +55,5 @@ Finalize the solution: run end-to-end validation, set up monitoring, apply house
 - [ ] Personal IP removed from storage firewall
 - [ ] Soft-delete enabled on storage and retention policies applied to KQL
 - [ ] Operations team has access to Power BI report and Teams alerts
+
+→ Optional: **[Workshop 10 — Advanced Dashboard & Alerts](../10-advanced-dashboard-alerts/)** for Gold-layer KPIs and production-grade alert rules

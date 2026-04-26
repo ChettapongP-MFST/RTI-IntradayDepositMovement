@@ -35,6 +35,7 @@ This workshop series walks through building that solution end-to-end.
 | 07 | [Power BI Report](workshops/07-powerbi-report/) | Power BI (+ optional RTD) | DirectQuery KPI report with 30s refresh |
 | 08 | [Activator Alerts](workshops/08-activator-alerts/) | Data Activator | KQL-driven Teams notifications |
 | 09 | [Validate & Monitor](workshops/09-validate-monitor/) | Monitor hub | End-to-end checklist + housekeeping |
+| 10 | [Advanced Dashboard & Alerts](workshops/10-advanced-dashboard-alerts/) | Power BI + Data Activator | Gold-layer KPIs (4 pages), ratio metrics, 6 production alert rules |
 
 ---
 
@@ -80,7 +81,8 @@ RTI-IntradayDepositMovement/
 │   │   └── scripts/
 │   ├── 07-powerbi-report/
 │   ├── 08-activator-alerts/
-│   └── 09-validate-monitor/
+│   ├── 09-validate-monitor/
+│   └── 10-advanced-dashboard-alerts/
 ├── resources/
 │   └── datasets/          # 16 mock CSVs (30-min intraday slots)
 ├── images/                # Architecture diagrams & screenshots
