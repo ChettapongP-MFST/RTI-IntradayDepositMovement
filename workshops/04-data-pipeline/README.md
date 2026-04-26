@@ -350,7 +350,7 @@ Still inside the **True** branch:
 |---|---|
 | Connection | Select the **Warehouse** connection → `wh_control_framework` |
 | Script type | **NonQuery** |
-| Script | **Add dynamic content** → paste the following: |
+| Script | **Paste directly** into the Script text box (do NOT click "Add dynamic content"): |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -362,7 +362,7 @@ VALUES (
     'Success',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
+    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
     NULL
 );
 ```
@@ -388,7 +388,7 @@ VALUES (
 |---|---|
 | Connection | `wh_control_framework` |
 | Script type | **NonQuery** |
-| Script | **Add dynamic content** → paste the following: |
+| Script | **Paste directly** into the Script text box (do NOT click "Add dynamic content"): |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -400,8 +400,8 @@ VALUES (
     'Failed',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
-    '@{replace(activity(''Copy CSV to Eventhouse'').error.message,'''','''''')}'
+    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
+    '@{replace(activity(''Copy CSV to Eventhouse'').error.message, '''', '''''''')}'
 );
 ```
 
@@ -456,7 +456,7 @@ Click the ✏️ **pencil icon** on the **False** branch to open it.
 |---|---|
 | Connection | `wh_control_framework` |
 | Script type | **NonQuery** |
-| Script | **Add dynamic content** → paste the following: |
+| Script | **Paste directly** into the Script text box (do NOT click "Add dynamic content"): |
 
 ```sql
 INSERT INTO dbo.ProcessedFiles
@@ -468,7 +468,7 @@ VALUES (
     'Skipped-Duplicate',
     '@{pipeline().Pipeline}',
     '@{pipeline().RunId}',
-    '@{concat(pipeline().TriggerType,'':'',coalesce(pipeline().TriggerName,''manual''))}',
+    '@{pipeline().TriggerType}:@{coalesce(pipeline().TriggerName, ''manual'')}',
     NULL
 );
 ```
