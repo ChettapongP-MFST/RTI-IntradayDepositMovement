@@ -493,6 +493,57 @@ Click **← Back** to return to the main canvas.
    - `Summary_Alert_Channel` (KQL Gold) has aggregated data — `Summary_Alert_Channel | count`.
 4. Re-run the same pipeline — verify **no new data rows**, just a new `Skipped-Duplicate` audit row.
 
+### Expected results after first successful run
+
+**KQL — Eventhouse:**
+
+```kql
+DepositMovement | count
+```
+
+| Count |
+|---|
+| **24** |
+
+> The mock CSV `mock_0000_0030.csv` contains 24 rows. Each row represents one deposit transaction in the 00:00–00:30 time window.
+
+**SQL — Warehouse:**
+
+```sql
+SELECT * FROM dbo.ProcessedFiles;
+```
+
+| FileName | IngestedAtUtc | RowCount_ | Status | PipelineName | PipelineRunId | RunAsUser | ErrorMsg |
+|---|---|---|---|---|---|---|---|
+| mock_0000_0030.csv | 2026-04-26 17:14:48 | 24 | Success | pl_ingest_DepositMovement | 1a190256-4b0a-... | Pipeline | NULL |
+
+### Expected results after re-run (duplicate test)
+
+**KQL — Eventhouse:**
+
+```kql
+DepositMovement | count
+```
+
+| Count |
+|---|
+| **24** |
+
+> Row count stays at 24 — no duplicate data ingested.
+
+**SQL — Warehouse:**
+
+```sql
+SELECT * FROM dbo.ProcessedFiles;
+```
+
+| FileName | IngestedAtUtc | RowCount_ | Status | PipelineName | PipelineRunId | RunAsUser | ErrorMsg |
+|---|---|---|---|---|---|---|---|
+| mock_0000_0030.csv | 2026-04-26 17:14:48 | 24 | Success | pl_ingest_... | 1a190256-... | Pipeline | NULL |
+| mock_0000_0030.csv | 2026-04-26 17:20:12 | 0 | Skipped-Duplicate | pl_ingest_... | 8f3c9a01-... | Pipeline | NULL |
+
+> A second row appears with `Status = Skipped-Duplicate` and `RowCount_ = 0` — proving the idempotency check works.
+
 ## ✅ Exit Criteria
 
 - [ ] Pipeline succeeds end-to-end
