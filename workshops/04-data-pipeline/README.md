@@ -25,7 +25,7 @@ Before clicking anything in Fabric, let's understand every component you'll crea
 | **0** | `Set vLoadTs` | Set Variable | **Freeze the clock.** Captures `@utcNow()` once so every downstream activity uses the exact same timestamp. Without this, Copy and KQL would have different `load_ts` values. |
 | **1** | `Get Metadata` | Get Metadata | **Defensive check — does the file actually exist?** Returns `exists`, `size`, `lastModified`. Catches race conditions where the trigger fires but the file isn't fully written yet. Also provides retry (2 × 30s) for transient storage hiccups. |
 | **2** | `Lookup ProcessedFiles` | Lookup | **Duplicate guard.** Queries the Warehouse audit table: *"Has this file already been successfully processed?"* Returns one row (duplicate) or empty (new file). This is the **application-level idempotency** check. |
-| **3** | `If Condition` | If Condition | **Router.** Evaluates `@empty(Lookup.output.firstRow)` — `true` = new file (go load it), `false` = duplicate (skip and audit). Splits the pipeline into two branches. |
+| **3** | `If Condition` | If Condition | **Router.** Evaluates `@equals(Lookup.output.count, 0)` — `true` = new file (go load it), `false` = duplicate (skip and audit). Splits the pipeline into two branches. |
 
 ### True branch (new file)
 
@@ -122,7 +122,7 @@ Here's the complete pipeline flow you'll build:
 [Lookup ProcessedFiles]
       │
       ▼
-[If Condition: @empty(Lookup.output.firstRow)]
+[If Condition: @equals(Lookup.output.count, 0)]
       │
       ├─ True (new file)
       │     │
@@ -235,7 +235,9 @@ Checks the Warehouse audit table to see if this file was already processed.
 | Connection | `wh_control_framework` |
 | Use query | **Query** |
 | Query | *(see below)* |
-| First row only | ✅ Checked |
+| First row only | ❌ **Unchecked** |
+
+> **Why uncheck "First row only"?** When checked and zero rows are returned, the output has no `firstRow` property — which breaks `@empty(firstRow)`. Unchecking it returns a `count` property and a `value` array, allowing `@equals(output.count, 0)` to work safely.
 
 **Query** (click the text box → **Add dynamic content**):
 
@@ -267,9 +269,11 @@ Routes the pipeline to either "load the file" or "skip as duplicate".
 
 | Setting | Value |
 |---|---|
-| Expression | Click the text box → **Add dynamic content** → `@empty(activity('Lookup ProcessedFiles').output.firstRow)` |
+| Expression | Click the text box → **Add dynamic content** → `@equals(activity('Lookup ProcessedFiles').output.count, 0)` |
 
-> `@empty(...)` returns `true` if the Lookup found no matching row (file is new), `false` if a row exists (duplicate).
+> `@equals(..., 0)` returns `true` if the Lookup found no matching row (file is new), `false` if a row exists (duplicate).
+>
+> ⚠️ **Why not `@empty(firstRow)`?** When the Lookup returns zero rows with "First row only" checked, the `firstRow` property does not exist at all — causing an `InvalidTemplate` error. Using `.output.count` is safe regardless of whether rows are returned.
 
 Now click into the **True** and **False** branches to add activities inside each.
 
