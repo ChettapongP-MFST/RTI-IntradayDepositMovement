@@ -37,6 +37,16 @@ The table has 16 columns split into **data columns** (from the CSV) and **system
 
 ### 2.2.2 CSV ingestion mapping (`DepositMovement_mapping`)
 
+After the table is created, the script creates an **ingestion mapping** — a separate object attached to the table. Think of them as two distinct things inside the KQL database:
+
+```
+KQL Database: DepositMovement
+├── Table: DepositMovement            ← holds the actual data (rows)
+└── Mapping: DepositMovement_mapping  ← instructions for "how to load a CSV into this table"
+```
+
+The **table** defines *what* columns exist. The **mapping** defines *how* incoming CSV data maps to those columns. Without the mapping, the Copy activity (Workshop 04) wouldn't know which CSV column goes into which table column.
+
 The mapping tells KQL **which CSV column position (ordinal) maps to which table column**. This is necessary because:
 
 - **The source CSV files have only 12 data columns**, but the table has 16 (12 data + 4 system).
@@ -56,6 +66,18 @@ The mapping tells KQL **which CSV column position (ordinal) maps to which table 
 Without this mapping, KQL would auto-infer column positions and types, causing the 4 system columns to fail silently or land in wrong columns.
 
 The mapping is saved as `'DepositMovement_mapping'` — this name is referenced later in the Copy Activity sink configuration (Workshop 04).
+
+**Verify both objects exist** by running these in the KQL query editor:
+
+```kusto
+// See the table schema
+.show table DepositMovement schema as json
+
+// See the mapping
+.show table DepositMovement ingestion csv mappings
+```
+
+You should see `DepositMovement_mapping` listed with all 16 column mappings (ordinals 0–15).
 
 ### 2.2.3 Streaming ingestion policy
 
