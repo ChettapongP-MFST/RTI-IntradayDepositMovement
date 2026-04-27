@@ -538,6 +538,9 @@ Each rule follows the same 4-step pattern:
 
 You will create **3 KQL sources** and attach rules to them.
 
+> ⏰ **Timezone note** — The `Date` column is stored in **ICT (UTC+7, Bangkok)**. KQL's `now()` returns UTC+0, so every query that filters on `Date` must offset by **+7 h**: `let now_bkk = now() + 7h;`
+> Columns named `*Utc` (e.g. `IngestedAtUtc`, `UpdatedAtUtc`) are already in UTC — no offset needed for those.
+
 ---
 
 ### Set Up Source 1 — Gold Summary Data
@@ -645,8 +648,9 @@ Updated: {UpdatedAtUtc}
 3. Query:
 
 ```kusto
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 Summary_Alert_Channel_v2
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Cumulative_Net = sum(Net_Amount)
 | extend Source = "Daily"
 ```
@@ -840,8 +844,9 @@ Run these anytime in the KQL Database query pane:
 
 ```kusto
 // Intraday net position by channel (today)
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 Summary_Alert_Channel_v2
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | project Channel, Net_Amount, Txn_Count, OffUs_Ratio, Debit_Credit_Ratio
 | order by Net_Amount asc
 
@@ -858,8 +863,9 @@ DepositMovement
 | order by IngestedAtUtc desc
 
 // Top risk channels right now
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 Summary_Alert_Channel_v2
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | where Debit_Credit_Ratio > 2.0 or OffUs_Ratio > 0.6
 | project Channel, Debit_Credit_Ratio, OffUs_Ratio, Net_Amount
 | order by Debit_Credit_Ratio desc
