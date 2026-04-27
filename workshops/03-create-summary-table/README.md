@@ -410,3 +410,20 @@ To check materialization health and lag:
 - [ ] `backfill=true` processed existing data (if any)
 
 → Proceed to **[Workshop 04 — Data Pipeline](../04-data-pipeline/)**
+
+---
+
+## 📚 KQL Reference Links
+
+| Concept | Documentation |
+|---|---|
+| `.set-or-append` command | [.set-or-append](https://learn.microsoft.com/kusto/management/data-ingestion/ingest-from-query?view=microsoft-fabric) |
+| `.create function` (stored function) | [.create function](https://learn.microsoft.com/kusto/management/create-function?view=microsoft-fabric) |
+| `.create materialized-view` | [Materialized views](https://learn.microsoft.com/kusto/management/materialized-views/materialized-view-overview?view=microsoft-fabric) |
+| `summarize` operator | [summarize operator](https://learn.microsoft.com/kusto/query/summarize-operator?view=microsoft-fabric) |
+| `join` operator | [join operator](https://learn.microsoft.com/kusto/query/join-operator?view=microsoft-fabric) |
+| `arg_max()` aggregation | [arg_max()](https://learn.microsoft.com/kusto/query/arg-max-aggregation-function?view=microsoft-fabric) |
+| `extend` operator | [extend operator](https://learn.microsoft.com/kusto/query/extend-operator?view=microsoft-fabric) |
+| `distinct` operator | [distinct operator](https://learn.microsoft.com/kusto/query/distinct-operator?view=microsoft-fabric) |
+| Materialized view `backfill` | [Materialized views — backfill](https://learn.microsoft.com/kusto/management/materialized-views/materialized-view-create-or-alter?view=microsoft-fabric) |
+| KQL quick reference | [KQL quick reference](https://learn.microsoft.com/kusto/query/kql-quick-reference?view=microsoft-fabric) |
