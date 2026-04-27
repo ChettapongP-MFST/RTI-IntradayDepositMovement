@@ -115,28 +115,66 @@ DepositMovement
 
 ### 8.2.3 Combined query — alert with channel detail
 
-This is the query you will use as the Activator event source. It produces one row per evaluation with the cumulative total, alert flag, and a summary of channel contributions:
+This is the query you will use as the Activator event source. It produces one row per evaluation with the cumulative total, alert flag, and a summary of channel contributions.
+
+The query has **6 phases** — scalars are computed first, then attached to the channel breakdown table:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Phase 1   Set up time context (UTC → Bangkok)       │
+│  Phase 2   Calculate grand total (single scalar)     │
+│  Phase 3   Determine alert tier (case logic)         │
+│  Phase 4   Get latest time slot (single scalar)      │
+│  Phase 5   Build channel breakdown (4-row table)     │
+│  Phase 6   Combine scalars + table → final output    │
+└──────────────────────────────────────────────────────┘
+```
 
 ```kusto
-// Combined: threshold check + channel breakdown for Teams notification
+// ── Phase 1: Set up time context ────────────────────
+// now() returns UTC. Add 7h → Bangkok time.
+// startofday() truncates to midnight → matches the Date column in KQL.
 let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 let today = startofday(now_bkk);
+
+// ── Phase 2: Calculate grand total (single scalar) ──
+// toscalar() runs the inner query and returns ONE number (not a table).
+// It sums Net_Amount across ALL channels, ALL time slots, ALL products for today.
+// Example result: 6,100,000 (positive = net inflow) or -10,245,600,000 (net outflow).
 let cum_total = toscalar(
     DepositMovement
     | where Date == today
     | summarize sum(Net_Amount)
 );
+
+// ── Phase 3: Determine alert tier ───────────────────
+// case() works like if/else if/else — evaluates top to bottom, first match wins.
+// Order matters: High (-15B) is checked FIRST.
+// If cum_total = -12B → fails -15B check → hits -10B check → returns "🟠 Medium".
+// Last argument "✅ Normal" is the default (else) when no threshold is breached.
 let alert_flag = case(
     cum_total <= -15000000000, "🔴 High",
     cum_total <= -10000000000, "🟠 Medium",
     cum_total <=  -5000000000, "🟡 Low",
     "✅ Normal"
 );
+
+// ── Phase 4: Get latest time slot (single scalar) ───
+// Returns one value: the most recent Time slot that has data today.
+// Example: "23:30-24:00" (all 48 slots loaded) or "10:30-11:00" (partial day).
+// Tells the Teams recipient "data is current up to this slot."
 let latest_time = toscalar(
     DepositMovement
     | where Date == today
     | summarize max(Time)
 );
+
+// ── Phase 5: Build channel breakdown (4-row table) ──
+// Produces 4 rows: ATM, BCMS, ENET, TELL.
+// summarize ... by Channel → aggregates all time slots & products into one row per channel.
+// order by Net asc → most negative (worst outflow) appears first.
+// Net_Mil = round(Net / 1000000, 1) → converts Baht → millions with 1 decimal.
+// project keeps only Channel and Net_Mil; drops raw Baht columns.
 let channel_detail = 
     DepositMovement
     | where Date == today
@@ -148,6 +186,11 @@ let channel_detail =
     | order by Net asc
     | extend Net_Mil = round(Net / 1000000, 1)
     | project Channel, Net_Mil;
+
+// ── Phase 6: Combine scalars + table → final output ─
+// Takes the 4-row channel_detail table and appends 5 columns to every row using extend.
+// All scalar values (cum_total, alert_flag, latest_time) repeat on every row
+// so the Activator / Teams message can reference them from any row.
 channel_detail
 | extend 
     Cum_Net_Total = round(cum_total / 1000000, 1),
@@ -156,6 +199,10 @@ channel_detail
     Alert_Time = now_bkk,
     Date = format_datetime(today, 'yyyy-MM-dd')
 ```
+
+> 💡 **Why scalars first, table last?** KQL cannot mix scalar and tabular results in one pipeline. So we compute single values (`cum_total`, `alert_flag`, `latest_time`) with `toscalar()`/`case()` in Phases 2–4, then attach them to the channel table in Phase 6 using `extend`.
+
+> 💡 **Why one query, not three?** Activator runs ONE query per evaluation cycle. This single query gives the alert engine everything it needs — threshold check + channel detail + metadata — in one call.
 
 **Expected output** (example):
 
