@@ -440,10 +440,13 @@ As an alternative to Power BI (or as a complement), create an RTD inside the Eve
 2. Name it `RTD – Intraday Deposit Movement`.
 3. Add tiles using KQL queries:
 
+> ⏰ **Timezone note** — The `Date` column is stored in **ICT (UTC+7, Bangkok)**. KQL's `now()` returns UTC+0, so every query must offset by **+7 h**: `let now_bkk = now() + 7h;`
+
 **Tile 1 — Cumulative Net by Time:**
 ```kusto
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Net = sum(Net_Amount) by Time
 | order by Time asc
 | extend CumNet = row_cumsum(Net)
@@ -453,16 +456,18 @@ DepositMovement
 
 **Tile 2 — Net by Channel:**
 ```kusto
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Inflow=sum(Credit_Amount), Outflow=sum(Debit_Amount) by Channel
 | render barchart with (title="Net Flow by Channel")
 ```
 
 **Tile 3 — Alert check:**
 ```kusto
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Net = sum(Net_Amount) by Time
 | order by Time asc
 | extend CumNet = row_cumsum(Net)

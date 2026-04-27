@@ -43,12 +43,15 @@ Monitor `SUM(Net_Amount)` for **today's date** (intraday). When the cumulative n
 
 Before wiring up Activator, let's validate the query that will power the alerts. Run this in the **KQL Database query editor** to confirm it returns the expected shape:
 
+> ⏰ **Timezone note** — The `Date` column is stored in **ICT (UTC+7, Bangkok)**. KQL's `now()` returns UTC+0, so every query must offset by **+7 h** to match the data: `let now_bkk = now() + 7h;`
+
 ### 8.2.1 Intraday cumulative net by Channel
 
 ```kusto
 // Intraday cumulative net with channel breakdown — the Activator event source
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize 
     Net_Amount = sum(Net_Amount),
     Credit_Total = sum(Credit_Amount),
@@ -67,8 +70,9 @@ DepositMovement
 
 ```kusto
 // Overall intraday cumulative net — used for threshold comparison
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Cum_Net_Total = sum(Net_Amount)
 | extend Alert_Flag = case(
     Cum_Net_Total <= -15000000000, "High",
@@ -76,7 +80,7 @@ DepositMovement
     Cum_Net_Total <=  -5000000000, "Low",
     "Normal"
   )
-| extend Alert_Time = now()
+| extend Alert_Time = now_bkk
 ```
 
 > ⚠ **Units**: The raw data is in **Baht** (not millions). So −5,000 M Baht = `−5,000,000,000` in the KQL filter.
@@ -87,7 +91,8 @@ This is the query you will use as the Activator event source. It produces one ro
 
 ```kusto
 // Combined: threshold check + channel breakdown for Teams notification
-let today = startofday(now());
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
+let today = startofday(now_bkk);
 let cum_total = toscalar(
     DepositMovement
     | where Date == today
@@ -120,7 +125,7 @@ channel_detail
     Cum_Net_Total = round(cum_total / 1000000, 1),
     Alert_Flag = alert_flag,
     Latest_Time = latest_time,
-    Alert_Time = now(),
+    Alert_Time = now_bkk,
     Date = today
 ```
 
@@ -128,10 +133,10 @@ channel_detail
 
 | Channel | Net_Mil | Cum_Net_Total | Alert_Flag | Latest_Time | Alert_Time | Date |
 |---|---|---|---|---|---|---|
-| ATM | −3,200.5 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T10:35:00Z | 2026-04-28 |
-| BCMS | −4,100.2 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T10:35:00Z | 2026-04-28 |
-| ENET | −1,800.0 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T10:35:00Z | 2026-04-28 |
-| TELL | −1,144.9 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T10:35:00Z | 2026-04-28 |
+| ATM | −3,200.5 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
+| BCMS | −4,100.2 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
+| ENET | −1,800.0 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
+| TELL | −1,144.9 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
 
 ---
 
@@ -252,8 +257,9 @@ For a more visually appealing Teams message, use the **Custom action** → **Pow
 If your mock data already breaches thresholds (check in KQL):
 
 ```kusto
+let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
 DepositMovement
-| where Date == startofday(now())
+| where Date == startofday(now_bkk)
 | summarize Cum_Net_Mil = round(sum(Net_Amount) / 1000000, 1)
 ```
 
