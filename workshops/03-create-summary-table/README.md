@@ -104,6 +104,24 @@ Run in the KQL Database → **Query** pane:
 
 - [kql/03-create-Summary_Alert_Channel.kql](kql/03-create-Summary_Alert_Channel.kql)
 
+The script creates:
+
+```kql
+.create table Summary_Alert_Channel (
+    Date: datetime,
+    Time: string,
+    Channel: string,
+    Credit_Total: real,
+    Debit_Total: real,
+    Net_Amount: real,
+    Txn_Count: long,
+    UpdatedAtUtc: datetime
+)
+
+// Enable streaming ingestion for low-latency updates
+.alter table Summary_Alert_Channel policy streamingingestion enable
+```
+
 ### 3.A2 Create the Stored Function
 
 This stored function is the **engine behind the Gold table**. Rather than re-aggregating the entire `DepositMovement` table every time (which would be expensive), it uses an **incremental approach**:
