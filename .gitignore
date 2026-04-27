@@ -18,6 +18,9 @@ local.settings.json
 node_modules/
 *.log
 
+# Generated presentations
+*.pptx
+
 # Temporary
 tmp/
 *.tmp
