@@ -252,3 +252,20 @@ Microsoft Fabric offers three analytical storage engines. Understanding when to 
 | *(Not used in this workshop)* | **Lakehouse** | Would be used if we needed historical archive or Spark-based ML on deposit patterns |
 
 > 💡 **Rule of thumb:** **Eventhouse** for real-time, **Warehouse** for structured reporting & control, **Lakehouse** for big data ETL & data science.
+
+---
+
+## 📚 KQL Reference Links
+
+| Concept | Documentation |
+|---|---|
+| `.create table` command | [.create table](https://learn.microsoft.com/kusto/management/create-table-command?view=microsoft-fabric) |
+| `.create table ingestion csv mapping` | [.create ingestion mapping](https://learn.microsoft.com/kusto/management/create-ingestion-mapping-command?view=microsoft-fabric) |
+| `.alter table policy streamingingestion` | [Streaming ingestion policy](https://learn.microsoft.com/kusto/management/streaming-ingestion-policy?view=microsoft-fabric) |
+| `.alter table policy retention` | [Retention policy](https://learn.microsoft.com/kusto/management/retention-policy?view=microsoft-fabric) |
+| `.alter table policy caching` | [Caching policy](https://learn.microsoft.com/kusto/management/cache-policy?view=microsoft-fabric) |
+| `.show table schema` | [.show table schema](https://learn.microsoft.com/kusto/management/show-table-schema-command?view=microsoft-fabric) |
+| `.show table ingestion csv mappings` | [.show ingestion mappings](https://learn.microsoft.com/kusto/management/show-ingestion-mapping-command?view=microsoft-fabric) |
+| Eventhouse overview | [Eventhouse in Microsoft Fabric](https://learn.microsoft.com/fabric/real-time-intelligence/eventhouse) |
+| KQL quick reference | [KQL quick reference](https://learn.microsoft.com/kusto/query/kql-quick-reference?view=microsoft-fabric) |
+| Fabric Warehouse | [Warehouse in Microsoft Fabric](https://learn.microsoft.com/fabric/data-warehouse/data-warehousing) |
