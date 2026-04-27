@@ -65,7 +65,7 @@ DepositMovement
     Cum_Net_Channel = sum(Cum_Net),
     arg_max(Time, *)
     by Channel
-| extend Date = today
+| extend Date = format_datetime(today, 'yyyy-MM-dd')
 ```
 
 **Column explanation:**
@@ -92,7 +92,7 @@ DepositMovement
 | where Date == today
 | summarize Cum_Net_Total = sum(Net_Amount)
 | extend
-    Date = today,
+    Date = format_datetime(today, 'yyyy-MM-dd'),
     Alert_Flag = case(
         Cum_Net_Total <= -15000000000, "High",
         Cum_Net_Total <= -10000000000, "Medium",
@@ -154,7 +154,7 @@ channel_detail
     Alert_Flag = alert_flag,
     Latest_Time = latest_time,
     Alert_Time = now_bkk,
-    Date = today
+    Date = format_datetime(today, 'yyyy-MM-dd')
 ```
 
 **Expected output** (example):
