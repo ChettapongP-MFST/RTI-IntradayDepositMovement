@@ -50,8 +50,9 @@ Before wiring up Activator, let's validate the query that will power the alerts.
 ```kusto
 // Intraday cumulative net with channel breakdown — the Activator event source
 let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
+let today = startofday(now_bkk);
 DepositMovement
-| where Date == startofday(now_bkk)
+| where Date == today
 | summarize 
     Net_Amount = sum(Net_Amount),
     Credit_Total = sum(Credit_Amount),
@@ -64,6 +65,7 @@ DepositMovement
     Cum_Net_Channel = sum(Cum_Net),
     arg_max(Time, *)
     by Channel
+| extend Date = today
 ```
 
 ### 8.2.2 Intraday cumulative net total (for threshold check)
@@ -71,16 +73,19 @@ DepositMovement
 ```kusto
 // Overall intraday cumulative net — used for threshold comparison
 let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
+let today = startofday(now_bkk);
 DepositMovement
-| where Date == startofday(now_bkk)
+| where Date == today
 | summarize Cum_Net_Total = sum(Net_Amount)
-| extend Alert_Flag = case(
-    Cum_Net_Total <= -15000000000, "High",
-    Cum_Net_Total <= -10000000000, "Medium",
-    Cum_Net_Total <=  -5000000000, "Low",
-    "Normal"
-  )
-| extend Alert_Time = now_bkk
+| extend
+    Date = today,
+    Alert_Flag = case(
+        Cum_Net_Total <= -15000000000, "High",
+        Cum_Net_Total <= -10000000000, "Medium",
+        Cum_Net_Total <=  -5000000000, "Low",
+        "Normal"
+    ),
+    Alert_Time = now_bkk
 ```
 
 > ⚠ **Units**: The raw data is in **Baht** (not millions). So −5,000 M Baht = `−5,000,000,000` in the KQL filter.
