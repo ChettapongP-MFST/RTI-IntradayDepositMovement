@@ -17,6 +17,9 @@ local.settings.json
 # Node / scripts scratch
 node_modules/
 *.log
+package.json
+package-lock.json
+generate-slides.js
 
 # Generated presentations
 *.pptx
