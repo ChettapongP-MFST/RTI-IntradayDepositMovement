@@ -68,6 +68,20 @@ DepositMovement
 | extend Date = today
 ```
 
+**Column explanation:**
+
+| Column | Meaning |
+|---|---|
+| `Channel` | Banking channel: `ATM`, `BCMS`, `ENET`, `TELL` |
+| `Net_Amount` | Sum of `Net_Amount` (Credit − Debit) per channel per time slot, in **Baht** |
+| `Credit_Total` | Sum of credit (inflow) per channel per time slot |
+| `Debit_Total` | Sum of debit (outflow) per channel per time slot |
+| `Txn_Count` | Total transaction count per channel per time slot |
+| `Time` | Latest 30-min time slot for that channel (via `arg_max`) |
+| `Cum_Net` | Running cumulative net within each channel, ordered by time — shows how the channel's balance builds through the day |
+| `Cum_Net_Channel` | Total cumulative net for the channel across all time slots |
+| `Date` | Filtered date in ICT (Bangkok) — verify this equals today's date |
+
 ### 8.2.2 Intraday cumulative net total (for threshold check)
 
 ```kusto
@@ -87,6 +101,15 @@ DepositMovement
     ),
     Alert_Time = now_bkk
 ```
+
+**Column explanation:**
+
+| Column | Meaning |
+|---|---|
+| `Cum_Net_Total` | Grand total of `Net_Amount` across **all channels** for today, in **Baht** — the single number compared against alert thresholds |
+| `Date` | Filtered date in ICT (Bangkok) — verify this equals today's date |
+| `Alert_Flag` | Tier label based on `Cum_Net_Total`: `High` (≤ −15 B), `Medium` (≤ −10 B), `Low` (≤ −5 B), or `Normal` |
+| `Alert_Time` | Current Bangkok time — when this check was evaluated |
 
 > ⚠ **Units**: The raw data is in **Baht** (not millions). So −5,000 M Baht = `−5,000,000,000` in the KQL filter.
 
@@ -143,18 +166,38 @@ channel_detail
 | ENET | −1,800.0 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
 | TELL | −1,144.9 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
 
+**Column explanation (8.2.3 combined query):**
+
+| Column | Meaning |
+|---|---|
+| `Channel` | Banking channel — one row per channel |
+| `Net_Mil` | Each channel's total `Net_Amount` today, converted to **millions of Baht** (`Net / 1,000,000`). Negative = net outflow |
+| `Cum_Net_Total` | Grand total `Net_Amount` across **all 4 channels** today, in **millions of Baht**. Same value on every row — this is the number compared against alert thresholds |
+| `Alert_Flag` | Tier label with emoji: ✅ Normal, 🟡 Low (≤ −5,000 M), 🟠 Medium (≤ −10,000 M), 🔴 High (≤ −15,000 M) |
+| `Latest_Time` | The most recent 30-min time slot that has data today (e.g. `10:30-11:00`) |
+| `Alert_Time` | Current Bangkok time (UTC+7) — when this evaluation ran |
+| `Date` | The ICT (Bangkok) date being queried — verify this equals today |
+
+> 💡 **Reading the output:** If `Cum_Net_Total` = −10,245.6 M and `Alert_Flag` = 🟠 Medium, it means the combined net across all channels has breached the −10,000 M threshold. The `Net_Mil` column shows which channels are driving the outflow (most negative at the top, sorted by `Net asc`).
+
 ---
 
 ## 8.3 Set up the Activator event source
 
+The Activator continuously evaluates the KQL query on a schedule. Each evaluation fetches the latest data, checks whether thresholds are breached, and fires an alert if conditions are met.
+
 1. Open `act-deposit-alerts` in Fabric.
 2. Click **Select a data source** → choose **Eventhouse / KQL Database**.
+   > This tells Activator to pull data directly from the KQL database using a live query.
 3. Select database: `DepositMovement`.
 4. Paste the **combined query** from section 8.2.3 into the query editor.
-5. Set the **evaluation frequency**:
-   - Recommended: **Every 5 minutes** (balances latency vs. KQL cost).
-   - For testing: **Every 1 minute**.
+   > The combined query returns one row per channel with `Cum_Net_Total`, `Alert_Flag`, and `Net_Mil` — everything the alert rules and Teams message need in a single query.
+5. Set the **evaluation frequency** — how often Activator re-runs the query:
+   - Recommended: **Every 5 minutes** (balances alert latency vs. KQL compute cost).
+   - For testing: **Every 1 minute** (faster feedback, but higher RU consumption).
+   > 💡 Each evaluation sends the full KQL query to the Eventhouse. A 5-minute cycle means ~288 executions/day.
 6. Click **Connect** → verify the preview shows rows with `Alert_Flag`, `Cum_Net_Total`, and `Channel` columns.
+   > If the preview returns **0 rows**, check: (a) there is data for today's date, (b) the UTC+7 offset is correct, (c) the `Date` column value matches today.
 
 ---
 
