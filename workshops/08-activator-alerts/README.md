@@ -380,6 +380,21 @@ If data doesn't breach −5,000 M, temporarily adjust the rule thresholds:
 1. Drop a CSV file into the ADLS container that would push the cumulative net below −5,000 M.
 2. The pipeline ingests it → Activator evaluates on the next cycle → Teams alert fires.
 
+Use the pre-generated mock data in **`resources/datasets/extra-mock-up/`**.
+Four dates (2026-04-27 → 2026-04-30) are designed to breach **all 3 tiers** within a single intraday.
+
+#### Summary — Alert Breach Windows per Date
+
+| Date | 🟡 Low ≤ −5,000 M | 🟠 Medium ≤ −10,000 M | 🔴 High ≤ −15,000 M | EOD Cumulative |
+|---|---|---|---|---|
+| **2026-04-27** | **10:00 – 10:30** | **14:30 – 15:00** | **19:00 – 19:30** | −16,500 M |
+| **2026-04-28** | **09:30 – 10:00** | **13:00 – 13:30** | **17:30 – 18:00** | −17,000 M |
+| **2026-04-29** | **11:00 – 11:30** | **15:30 – 16:00** | **20:30 – 21:00** | −16,800 M |
+| **2026-04-30** | **08:30 – 09:00** | **12:00 – 12:30** | **16:00 – 16:30** | −17,200 M |
+
+> 💡 Each date crosses all 3 thresholds at **different times** for a realistic demo.
+> Upload CSVs from the target date one by one (in time order) to observe each tier fire sequentially.
+
 ### Verification checklist
 
 After testing, confirm in Teams:
