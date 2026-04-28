@@ -243,53 +243,64 @@ The Activator continuously evaluates the KQL query on a schedule. Each evaluatio
 3. **Run** the query to verify it returns results.
    > If it returns **0 rows**, check: (a) there is data for today's date, (b) the UTC+7 offset is correct, (c) the `Date` column value matches today.
 4. In the toolbar, click **More…** → **Add alert**.
-   > This opens Data Activator with the KQL query already connected as the event source.
-5. Name the Activator item `act-deposit-alerts` (or select an existing one).
-6. Set the **evaluation frequency** — how often Activator re-runs the query:
-   - Recommended: **Every 5 minutes** (balances alert latency vs. KQL compute cost).
-   - For testing: **Every 1 minute** (faster feedback, but higher RU consumption).
-   > 💡 Each evaluation sends the full KQL query to the Eventhouse. A 5-minute cycle means ~288 executions/day.
-7. Verify the preview shows rows with `Alert_Flag`, `Cum_Net_Total`, and `Channel` columns.
+5. In the **Add rule** dialog, fill in:
+   - **Rule name**: `rule_Net_Amount_alert`
+   - **Source**: auto-filled as `DepositMovement` (from the KQL Queryset).
+   - **Query**: auto-filled with the combined query from step 2.
+   - **Run query every**: `5 minutes` (recommended) or `1 minute` (for testing).
+   - **Condition**: `On each event` (default — will be refined in section 8.4).
+   - **Action**: `Message me in Teams`.
+6. **Save location**: choose or create `act-deposit-alerts`.
+7. Click **Create**.
+   > A confirmation dialog **"Alert created"** appears — click **Open** to go to the Activator.
 
 ---
 
-## 8.4 Create the alert rules
+## 8.4 Configure the alert rule
 
-### Rule 1 — 🟡 Low Alert (≤ −5,000 M)
+After clicking **Open**, you are inside `act-deposit-alerts` with the rule `rule_Net_Amount_alert` selected.
 
-1. In the Activator canvas, click **+ New rule**.
-2. **Name**: `Low — Net Outflow ≤ -5,000M`
-3. **Monitor**: `Cum_Net_Total` column.
-4. **Condition**: `Cum_Net_Total` **is less than or equal to** `−5000`.
-   > (The query outputs in millions, so −5,000 M = `−5000` in the `Cum_Net_Total` column.)
-5. **Additional filter**: `Alert_Flag` **contains** `Low`
-6. **Action**: Microsoft Teams (see section 8.5).
+The left Explorer panel shows:
+```
+DepositMovement
+  └─ DepositMovement event
+       └─ rule_Net_Amount_alert   (Running)
+```
 
-### Rule 2 — 🟠 Medium Alert (≤ −10,000 M)
+### Configure the Condition
 
-1. **+ New rule** → name: `Medium — Net Outflow ≤ -10,000M`
-2. **Condition**: `Cum_Net_Total` **≤** `−10000`
-3. **Additional filter**: `Alert_Flag` **contains** `Medium`
-4. **Action**: Microsoft Teams.
+In the **Definition** tab (right panel), under **Condition 1**:
 
-### Rule 3 — 🔴 High Alert (≤ −15,000 M)
+1. Change **Operation** from `On every value` → **`Is less than or equal to`** (numeric).
+2. **Column**: select `Cum_Net_Total`.
+3. **Value**: enter `-5000`.
+   > This triggers when the cumulative net outflow breaches the 🟡 Low threshold (−5,000 M).
+   > Since the KQL query outputs values in millions, `−5000` means −5,000 M Baht.
 
-1. **+ New rule** → name: `High — Net Outflow ≤ -15,000M`
-2. **Condition**: `Cum_Net_Total` **≤** `−15000`
-3. **Additional filter**: `Alert_Flag` **contains** `High`
-4. **Action**: Microsoft Teams.
+> 💡 **Single rule vs. three rules**: Because the KQL query already outputs `Alert_Flag` (Normal / Low / Medium / High), you can use a **single rule** with:
+> - Operation: **`Is not equal to`** (string)
+> - Column: `Alert_Flag`
+> - Value: `Normal`
+>
+> This fires for **any** tier (Low, Medium, High). The `Alert_Flag` value in the Teams message tells you which tier was breached.
 
-### De-duplication
+### Configure the Action
 
-Each rule should fire **only once per breach** (not every evaluation cycle). Configure:
-- **Trigger**: **When condition first becomes true** (not "each time").
-- This ensures you get one Teams message per tier crossing, not repeated alerts every 5 minutes.
+Scroll down to the **Action** section (see section 8.5 for Teams message template).
+
+### Save
+
+Click **Save and update** at the bottom right.
+
+### Quick test
+
+Click **Send me a test action** in the toolbar to verify the Teams connection works before waiting for a real trigger.
 
 ---
 
 ## 8.5 Configure the Microsoft Teams action
 
-For each rule, configure the Teams notification:
+For the rule, configure the Teams notification:
 
 ### 8.5.1 Connect to Teams
 
