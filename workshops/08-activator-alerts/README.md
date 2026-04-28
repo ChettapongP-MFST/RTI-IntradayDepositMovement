@@ -233,18 +233,23 @@ channel_detail
 
 The Activator continuously evaluates the KQL query on a schedule. Each evaluation fetches the latest data, checks whether thresholds are breached, and fires an alert if conditions are met.
 
-1. Open `act-deposit-alerts` in Fabric.
-2. Click **Select a data source** → choose **Eventhouse / KQL Database**.
-   > This tells Activator to pull data directly from the KQL database using a live query.
-3. Select database: `DepositMovement`.
-4. Paste the **combined query** from section 8.2.3 into the query editor.
+> ⚠️ **Important**: You cannot connect an Eventhouse/KQL Database directly from inside the Activator's "Select a data source" dialog. Instead, start from the **KQL Queryset** side.
+
+### Steps
+
+1. Open your **KQL Queryset** in the Fabric workspace (the one connected to the `DepositMovement` database).
+2. Paste the **combined query** from section 8.2.3 into the queryset editor.
    > The combined query returns one row per channel with `Cum_Net_Total`, `Alert_Flag`, and `Net_Mil` — everything the alert rules and Teams message need in a single query.
-5. Set the **evaluation frequency** — how often Activator re-runs the query:
+3. **Run** the query to verify it returns results.
+   > If it returns **0 rows**, check: (a) there is data for today's date, (b) the UTC+7 offset is correct, (c) the `Date` column value matches today.
+4. In the toolbar, click **More…** → **Add alert**.
+   > This opens Data Activator with the KQL query already connected as the event source.
+5. Name the Activator item `act-deposit-alerts` (or select an existing one).
+6. Set the **evaluation frequency** — how often Activator re-runs the query:
    - Recommended: **Every 5 minutes** (balances alert latency vs. KQL compute cost).
    - For testing: **Every 1 minute** (faster feedback, but higher RU consumption).
    > 💡 Each evaluation sends the full KQL query to the Eventhouse. A 5-minute cycle means ~288 executions/day.
-6. Click **Connect** → verify the preview shows rows with `Alert_Flag`, `Cum_Net_Total`, and `Channel` columns.
-   > If the preview returns **0 rows**, check: (a) there is data for today's date, (b) the UTC+7 offset is correct, (c) the `Date` column value matches today.
+7. Verify the preview shows rows with `Alert_Flag`, `Cum_Net_Total`, and `Channel` columns.
 
 ---
 
