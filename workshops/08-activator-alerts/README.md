@@ -113,11 +113,11 @@ DepositMovement
 
 > ⚠ **Units**: The raw data is in **Baht** (not millions). So −5,000 M Baht = `−5,000,000,000` in the KQL filter.
 
-### 8.2.3 Combined query — alert with channel detail
+### 8.2.3 Combined query — alert with channel detail (single-row pivot)
 
-This is the query you will use as the Activator event source. It produces one row per evaluation with the cumulative total, alert flag, and a summary of channel contributions.
+This is the query you will use as the Activator event source. It produces **one row** per evaluation with the cumulative total, alert flag, and each channel's net pivoted into separate columns.
 
-The query has **6 phases** — scalars are computed first, then attached to the channel breakdown table:
+The query has **5 phases** — scalars are computed first, then channels are pivoted into a single row:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -125,8 +125,7 @@ The query has **6 phases** — scalars are computed first, then attached to the 
 │  Phase 2   Calculate grand total (single scalar)     │
 │  Phase 3   Determine alert tier (case logic)         │
 │  Phase 4   Get latest time slot (single scalar)      │
-│  Phase 5   Build channel breakdown (4-row table)     │
-│  Phase 6   Combine scalars + table → final output    │
+│  Phase 5   Pivot channels into ONE row + metadata    │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -169,63 +168,52 @@ let latest_time = toscalar(
     | summarize max(Time)
 );
 
-// ── Phase 5: Build channel breakdown (4-row table) ──
-// Produces 4 rows: ATM, BCMS, ENET, TELL.
-// summarize ... by Channel → aggregates all time slots & products into one row per channel.
-// order by Net asc → most negative (worst outflow) appears first.
-// Net_Mil = round(Net / 1000000, 1) → converts Baht → millions with 1 decimal.
-// project keeps only Channel and Net_Mil; drops raw Baht columns.
-let channel_detail = 
-    DepositMovement
-    | where Date == today
-    | summarize 
-        Net = sum(Net_Amount),
-        Credit = sum(Credit_Amount),
-        Debit = sum(Debit_Amount)
-        by Channel
-    | order by Net asc
-    | extend Net_Mil = round(Net / 1000000, 1)
-    | project Channel, Net_Mil;
-
-// ── Phase 6: Combine scalars + table → final output ─
-// Takes the 4-row channel_detail table and appends 5 columns to every row using extend.
-// All scalar values (cum_total, alert_flag, latest_time) repeat on every row
-// so the Activator / Teams message can reference them from any row.
-channel_detail
-| extend 
+// ── Phase 5: Pivot channels into ONE row + metadata ─
+// First: summarize Net per Channel (4 rows).
+// Then: take_anyif() picks the value for each specific channel → collapses into 1 row.
+// Finally: extend attaches scalars (cum_total, alert_flag, etc.) to the single row.
+// Result: ONE row with ATM_Net, BCMS_Net, ENET_Net, TELL_Net + alert metadata.
+DepositMovement
+| where Date == today
+| summarize Net = round(sum(Net_Amount) / 1000000, 1) by Channel
+| summarize
+    ATM_Net  = take_anyif(Net, Channel == "ATM"),
+    BCMS_Net = take_anyif(Net, Channel == "BCMS"),
+    ENET_Net = take_anyif(Net, Channel == "ENET"),
+    TELL_Net = take_anyif(Net, Channel == "TELL")
+| extend
     Cum_Net_Total = round(cum_total / 1000000, 1),
-    Alert_Flag = alert_flag,
-    Latest_Time = latest_time,
-    Alert_Time = now_bkk,
-    Date = format_datetime(today, 'yyyy-MM-dd')
+    Alert_Flag    = alert_flag,
+    Latest_Time   = latest_time,
+    Alert_Time    = now_bkk,
+    Date          = format_datetime(today, 'yyyy-MM-dd')
 ```
 
-> 💡 **Why scalars first, table last?** KQL cannot mix scalar and tabular results in one pipeline. So we compute single values (`cum_total`, `alert_flag`, `latest_time`) with `toscalar()`/`case()` in Phases 2–4, then attach them to the channel table in Phase 6 using `extend`.
+> 💡 **Why pivot into one row?** Activator sends **one Teams message per row**. With 4 rows (one per channel), you'd get 4 duplicate messages. By pivoting, we get **1 message** that includes all channel values via `{ATM_Net}`, `{BCMS_Net}`, `{ENET_Net}`, `{TELL_Net}` placeholders.
 
 > 💡 **Why one query, not three?** Activator runs ONE query per evaluation cycle. This single query gives the alert engine everything it needs — threshold check + channel detail + metadata — in one call.
 
-**Expected output** (example):
+**Expected output** (1 row):
 
-| Channel | Net_Mil | Cum_Net_Total | Alert_Flag | Latest_Time | Alert_Time | Date |
-|---|---|---|---|---|---|---|
-| ATM | −3,200.5 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
-| BCMS | −4,100.2 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
-| ENET | −1,800.0 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
-| TELL | −1,144.9 | −10,245.6 | 🟠 Medium | 10:30-11:00 | 2026-04-28T17:35:00+07:00 | 2026-04-28 |
+| ATM_Net | BCMS_Net | ENET_Net | TELL_Net | Cum_Net_Total | Alert_Flag | Latest_Time | Alert_Time | Date |
+|---|---|---|---|---|---|---|---|---|
+| −523.6 | −570.9 | −534.5 | −548.7 | −2,177.8 | ✅ Normal | 05:30-06:00 | 2026-04-28T10:57:… | 2026-04-28 |
 
-**Column explanation (8.2.3 combined query):**
+**Column explanation:**
 
 | Column | Meaning |
 |---|---|
-| `Channel` | Banking channel — one row per channel |
-| `Net_Mil` | Each channel's total `Net_Amount` today, converted to **millions of Baht** (`Net / 1,000,000`). Negative = net outflow |
-| `Cum_Net_Total` | Grand total `Net_Amount` across **all 4 channels** today, in **millions of Baht**. Same value on every row — this is the number compared against alert thresholds |
+| `ATM_Net` | ATM channel's total `Net_Amount` today in **millions of Baht**. Negative = net outflow |
+| `BCMS_Net` | BCMS channel's total `Net_Amount` today in **millions of Baht** |
+| `ENET_Net` | ENET channel's total `Net_Amount` today in **millions of Baht** |
+| `TELL_Net` | TELL channel's total `Net_Amount` today in **millions of Baht** |
+| `Cum_Net_Total` | Grand total `Net_Amount` across **all 4 channels** today in **millions of Baht** — this is the number compared against alert thresholds |
 | `Alert_Flag` | Tier label with emoji: ✅ Normal, 🟡 Low (≤ −5,000 M), 🟠 Medium (≤ −10,000 M), 🔴 High (≤ −15,000 M) |
 | `Latest_Time` | The most recent 30-min time slot that has data today (e.g. `10:30-11:00`) |
 | `Alert_Time` | Current Bangkok time (UTC+7) — when this evaluation ran |
 | `Date` | The ICT (Bangkok) date being queried — verify this equals today |
 
-> 💡 **Reading the output:** If `Cum_Net_Total` = −10,245.6 M and `Alert_Flag` = 🟠 Medium, it means the combined net across all channels has breached the −10,000 M threshold. The `Net_Mil` column shows which channels are driving the outflow (most negative at the top, sorted by `Net asc`).
+> 💡 **Reading the output:** If `Cum_Net_Total` = −10,245.6 M and `Alert_Flag` = 🟠 Medium, it means the combined net across all channels has breached the −10,000 M threshold. Compare `ATM_Net`, `BCMS_Net`, `ENET_Net`, `TELL_Net` to see which channels are driving the outflow.
 
 ---
 
@@ -239,7 +227,7 @@ The Activator continuously evaluates the KQL query on a schedule. Each evaluatio
 
 1. Open your **KQL Queryset** in the Fabric workspace (the one connected to the `DepositMovement` database).
 2. Paste the **combined query** from section 8.2.3 into the queryset editor.
-   > The combined query returns one row per channel with `Cum_Net_Total`, `Alert_Flag`, and `Net_Mil` — everything the alert rules and Teams message need in a single query.
+   > The combined query returns **one row** with `Cum_Net_Total`, `Alert_Flag`, and per-channel columns (`ATM_Net`, `BCMS_Net`, `ENET_Net`, `TELL_Net`) — everything the alert rule and Teams message need in a single query.
 3. **Run** the query to verify it returns results.
    > If it returns **0 rows**, check: (a) there is data for today's date, (b) the UTC+7 offset is correct, (c) the `Date` column value matches today.
 4. In the toolbar, click **More…** → **Add alert**.
@@ -333,10 +321,10 @@ Use **dynamic content** placeholders from the query output columns. Format the m
 ┌─────────┬────────────┐
 │ Channel │  Net (M)   │
 ├─────────┼────────────┤
-│ ATM     │ {Net_Mil}  │
-│ BCMS    │ {Net_Mil}  │
-│ ENET    │ {Net_Mil}  │
-│ TELL    │ {Net_Mil}  │
+│ ATM     │ {ATM_Net}  │
+│ BCMS    │ {BCMS_Net} │
+│ ENET    │ {ENET_Net} │
+│ TELL    │ {TELL_Net} │
 └─────────┴────────────┘
 
 Action Required:
@@ -347,7 +335,7 @@ Action Required:
 Dashboard: [Open Power BI Report]
 ```
 
-> 💡 The actual placeholders depend on the Activator UI — use the **Insert dynamic content** dropdown to map each `{field}` to the corresponding query column. The channel breakdown appears because the query returns one row per channel.
+> 💡 The query returns **one row** with pivoted channel columns. Use the **Insert dynamic content** dropdown to map each `{field}` to the corresponding query column. This ensures **one Teams message** per alert with all 4 channels included.
 
 ### 8.5.3 Alternative — Adaptive Card (richer format)
 
