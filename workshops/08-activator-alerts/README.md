@@ -249,35 +249,36 @@ Choose **one** of the two options below. Both achieve the same outcome — alert
 
 ### Trade-off comparison
 
-| | **Option A** — 3 rules (1 condition each) | **Option B** — 1 rule (text condition) |
+| | **Option A** — 3 rules (exclusive ranges) | **Option B** — 1 rule (text condition) |
 |---|---|---|
 | **Rules to create** | 3 (`rule_alert_Low`, `rule_alert_Medium`, `rule_alert_High`) | 1 (`rule_alert_All`) |
-| **Condition type** | Numeric state: `Cum_Net_Total` ≤ threshold | Text state: `Alert_Flag` ≠ `✅ Normal` |
-| **Fires when** | Each rule fires independently at its own threshold | Single rule fires for any tier (Low, Medium, or High) |
-| **Tier identification** | Rule name + `{Alert_Flag}` in message | `{Alert_Flag}` in message only |
+| **Conditions per rule** | Low: 2, Medium: 2, High: 1 (AND logic for ranges) | 1 |
+| **Condition type** | Numeric state: `Cum_Net_Total` range per tier | Text state: `Alert_Flag` ≠ `✅ Normal` |
+| **Fires when** | Each rule fires **only** for its own tier range | Single rule fires for any tier (Low, Medium, or High) |
+| **Tier identification** | Rule name tells the exact tier | `{Alert_Flag}` in message only |
 | **Different actions per tier** | ✅ Yes — e.g., Low → monitor channel, High → management channel | ❌ No — same action for all tiers |
 | **Different Teams channels** | ✅ Yes — route each tier to a different channel | ❌ No — one channel for all |
-| **Setup complexity** | Higher — 3 rules × 1 action each | Lower — 1 rule × 1 action |
+| **Setup complexity** | Higher — 3 rules × 1–2 conditions each | Lower — 1 rule × 1 condition |
 | **Maintenance** | Update 3 rules if threshold changes | Update 1 rule |
-| **Messages per breach** | May receive multiple (e.g., Low + Medium fire when crossing −10,000 M) | Always 1 message per evaluation |
+| **Messages per breach** | Exactly 1 message (no overlap between tiers) | Exactly 1 message per evaluation |
 
 > 💡 **Recommendation:** Start with **Option B** for simplicity. Switch to **Option A** later if you need per-tier routing.
 
 ---
 
-### Option A — 3 rules (one condition per rule)
+### Option A — 3 rules (exclusive tier ranges)
 
-Create **3 separate rules** — one per alert tier. Each rule has its own numeric condition and fires independently.
+Create **3 separate rules** — one per alert tier. Each rule uses **exclusive numeric ranges** so it fires **only** for its own tier — no overlapping alerts.
 
-> ⚠️ In Fabric Activator, multiple conditions within a single rule act as **AND** (all must be true simultaneously). Since −15,000 ≤ −10,000 ≤ −5,000, a single rule with 3 numeric conditions would only fire when High is breached. Separate rules let each tier fire independently.
+> 💡 In Fabric Activator, multiple conditions within a single rule act as **AND** (all must be true simultaneously). We leverage this to create range-based conditions: Low fires only between −5,000 and −9,999, Medium only between −10,000 and −14,999, and High at −15,000 or below.
 
 #### Overview
 
-| Rule name | Condition | Column | Value | Fires when |
-|---|---|---|---|---|
-| `rule_alert_Low` | Is less than or equal to | `Cum_Net_Total` | `-5000` | 🟡 Low, 🟠 Medium, or 🔴 High |
-| `rule_alert_Medium` | Is less than or equal to | `Cum_Net_Total` | `-10000` | 🟠 Medium or 🔴 High |
-| `rule_alert_High` | Is less than or equal to | `Cum_Net_Total` | `-15000` | 🔴 High only |
+| Rule name | Conditions (AND) | Fires when |
+|---|---|---|
+| `rule_alert_Low` | `Cum_Net_Total` ≤ `-5000` **AND** `Cum_Net_Total` > `-10000` | 🟡 Low only (−5,000 to −9,999 M) |
+| `rule_alert_Medium` | `Cum_Net_Total` ≤ `-10000` **AND** `Cum_Net_Total` > `-15000` | 🟠 Medium only (−10,000 to −14,999 M) |
+| `rule_alert_High` | `Cum_Net_Total` ≤ `-15000` | 🔴 High only (−15,000 M or below) |
 
 > Since the KQL query outputs values in **millions of Baht**, `-5000` means −5,000 M Baht.
 
@@ -290,8 +291,14 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
    - **Operation**: `On every value` → expand **Numeric state** → select **`Is less than or equal to`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-5000`.
-3. Configure the **Action** (see section 8.5 for Teams message template).
-4. Click **Save and update**.
+3. Click **+ Add condition** to add **Condition 2**:
+   - **Operation**: expand **Numeric state** → select **`Is greater than`**.
+   - **Column**: select `Cum_Net_Total`.
+   - **Value**: enter `-10000`.
+4. Configure the **Action** (see section 8.5 for Teams message template).
+5. Click **Save and update**.
+
+> This rule fires when −10,000 < Cum_Net_Total ≤ −5,000 (i.e., 🟡 Low tier only).
 
 #### A.2 Configure rule 2 — 🟠 Medium
 
@@ -300,8 +307,14 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
    - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-10000`.
-3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium or 🔴 High).
-4. Click **Save and update**.
+3. Click **+ Add condition** to add **Condition 2**:
+   - **Operation**: expand **Numeric state** → select **`Is greater than`**.
+   - **Column**: select `Cum_Net_Total`.
+   - **Value**: enter `-15000`.
+4. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium).
+5. Click **Save and update**.
+
+> This rule fires when −15,000 < Cum_Net_Total ≤ −10,000 (i.e., 🟠 Medium tier only).
 
 #### A.3 Configure rule 3 — 🔴 High
 
@@ -312,6 +325,8 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
    - **Value**: enter `-15000`.
 3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` will show 🔴 High).
 4. Click **Save and update**.
+
+> This rule fires when Cum_Net_Total ≤ −15,000 (i.e., 🔴 High tier only). Only 1 condition needed since there is no lower bound.
 
 #### Final Explorer panel (Option A)
 
