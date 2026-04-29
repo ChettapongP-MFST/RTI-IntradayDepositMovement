@@ -392,13 +392,13 @@ Use **dynamic content** placeholders from the query output columns. In the Activ
 
 **Headline:**
 ```
-🏦 Intraday Deposit Movement Alert
+Deposit Alert  {Alert_Flag}  — Cumulative Net:  {Cum_Net_Total}  M THB
 ```
 
 **Message:**
 ```
-──
-
+Intraday Deposit Movement Alert
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Alert Level:    {Alert_Flag}
 Date:           {Date}
 Latest Slot:    {Latest_Time}
@@ -421,8 +421,6 @@ Action Required:
 • Low (-5,000M): Monitor closely
 • Medium (-10,000M): Escalate to Treasury
 • High (-15,000M): Immediate management action
-
-Dashboard: [Open Power BI Report]
 ```
 
 > 💡 Each `{ColumnName}` above becomes a **dynamic content chip** in the editor (displayed as a pill with `×` to remove). Use the **Insert dynamic content** dropdown to map: `Alert_Flag`, `Date`, `Latest_Time`, `Alert_Time`, `Cum_Net_Total`, `ATM_Net`, `BCMS_Net`, `ENET_Net`, `TELL_Net`.
