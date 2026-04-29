@@ -1,5 +1,5 @@
 """
-Generate mock deposit movement CSVs for 4 dates (2026-04-27 to 2026-04-30).
+Generate mock deposit movement CSVs for May 2026 (2026-05-01 to 2026-05-31).
 Each date hits ALL 3 alert tiers within a single intraday:
   🟡 Low   ≤ -5,000 M Baht  (cumulative)
   🟠 Medium ≤ -10,000 M Baht
@@ -7,11 +7,12 @@ Each date hits ALL 3 alert tiers within a single intraday:
 
 Each CSV = 24 rows (3 Products × 4 Channels × 2 Transaction Types).
 48 CSVs per date = 48 half-hour slots (00:00-24:00).
+Total: 31 dates × 48 = 1,488 CSV files.
 """
 
 import csv, os, random, math
 
-random.seed(42)
+random.seed(2026)
 
 # ── Configuration ────────────────────────────────────
 OUT_DIR = "extra-mock-up"
@@ -43,54 +44,65 @@ COMBOS = [
 # ── Alert tier design ────────────────────────────────
 # Each date: dict mapping slot_index → target cumulative net (in M Baht).
 # Between anchor points, we linearly interpolate the per-slot net contribution.
-# Final slot has some extra decline to end around -16,000 to -17,000M.
+# All dates hit all 3 tiers within a single intraday.
+# Slot index: 0=00:00-00:30, 1=00:30-01:00, ..., 17=08:30-09:00, 18=09:00-09:30, etc.
 
-DATE_CONFIGS = {
-    "2026-04-27": {
-        # Low @ 10:00 (slot 20), Medium @ 14:30 (slot 29), High @ 19:00 (slot 38)
+# Generate configs for 31 days of May 2026 with varied breach times.
+# Breach windows rotate to give visual diversity in the demo.
+_BREACH_PATTERNS = [
+    # (low_slot, med_slot, high_slot, overnight_M, end_M)
+    (17, 25, 33, -1500, -17500),  # day 1:  08:30, 12:30, 16:30
+    (18, 26, 35, -800,  -17200),  # day 2:  09:00, 13:00, 17:30
+    (19, 28, 37, -1000, -16600),  # day 3:  09:30, 14:00, 18:30
+    (20, 29, 38, -1200, -16800),  # day 4:  10:00, 14:30, 19:00
+    (21, 30, 39, -900,  -17000),  # day 5:  10:30, 15:00, 19:30
+    (17, 26, 34, -1400, -17400),  # day 6:  08:30, 13:00, 17:00
+    (18, 27, 36, -1100, -16900),  # day 7:  09:00, 13:30, 18:00
+    (19, 28, 35, -1300, -17100),  # day 8:  09:30, 14:00, 17:30
+    (20, 29, 37, -700,  -16700),  # day 9:  10:00, 14:30, 18:30
+    (21, 30, 38, -1600, -17300),  # day 10: 10:30, 15:00, 19:00
+    (17, 25, 34, -1200, -17600),  # day 11: 08:30, 12:30, 17:00
+    (18, 26, 35, -900,  -16500),  # day 12: 09:00, 13:00, 17:30
+    (19, 27, 36, -1500, -17000),  # day 13: 09:30, 13:30, 18:00
+    (20, 28, 37, -1000, -16800),  # day 14: 10:00, 14:00, 18:30
+    (21, 29, 38, -800,  -17200),  # day 15: 10:30, 14:30, 19:00
+    (17, 26, 33, -1300, -17500),  # day 16: 08:30, 13:00, 16:30
+    (18, 27, 34, -1100, -16600),  # day 17: 09:00, 13:30, 17:00
+    (19, 28, 36, -1400, -17100),  # day 18: 09:30, 14:00, 18:00
+    (20, 29, 37, -700,  -16900),  # day 19: 10:00, 14:30, 18:30
+    (21, 30, 39, -1600, -17400),  # day 20: 10:30, 15:00, 19:30
+    (17, 25, 33, -1000, -17300),  # day 21: 08:30, 12:30, 16:30
+    (18, 26, 34, -1200, -16700),  # day 22: 09:00, 13:00, 17:00
+    (19, 27, 35, -800,  -17000),  # day 23: 09:30, 13:30, 17:30
+    (20, 28, 36, -1500, -16500),  # day 24: 10:00, 14:00, 18:00
+    (21, 29, 37, -900,  -17200),  # day 25: 10:30, 14:30, 18:30
+    (17, 26, 35, -1400, -17600),  # day 26: 08:30, 13:00, 17:30
+    (18, 27, 36, -1100, -16800),  # day 27: 09:00, 13:30, 18:00
+    (19, 28, 37, -1300, -17100),  # day 28: 09:30, 14:00, 18:30
+    (20, 29, 38, -700,  -16900),  # day 29: 10:00, 14:30, 19:00
+    (21, 30, 39, -1600, -17400),  # day 30: 10:30, 15:00, 19:30
+    (18, 27, 35, -1000, -17000),  # day 31: 09:00, 13:30, 17:30
+]
+
+DATE_CONFIGS = {}
+for day in range(1, 32):
+    date_str = f"2026-05-{day:02d}"
+    low_s, med_s, high_s, overnight, end_m = _BREACH_PATTERNS[day - 1]
+    # Vary the breach magnitudes slightly per day
+    low_val = -5000 - (day * 50)       # e.g. -5050 to -5550
+    med_val = -10000 - (day * 80)      # e.g. -10080 to -10480
+    high_val = -15000 - (day * 60)     # e.g. -15060 to -15860
+    overnight_slot = 8  # mild drift stops at slot 8 (04:00)
+    DATE_CONFIGS[date_str] = {
         "anchors": [
-            (0,   0),
-            (10, -1500),      # mild overnight
-            (20, -5100),      # 🟡 Low breached at slot 20 = 10:00-10:30
-            (29, -10200),     # 🟠 Medium breached at slot 29 = 14:30-15:00
-            (38, -15300),     # 🔴 High breached at slot 38 = 19:00-19:30
-            (47, -16500),     # taper off
+            (0,  0),
+            (overnight_slot, overnight),
+            (low_s,  low_val),
+            (med_s,  med_val),
+            (high_s, high_val),
+            (47, end_m),
         ],
-    },
-    "2026-04-28": {
-        # Low @ 09:30 (slot 19), Medium @ 13:00 (slot 26), High @ 17:30 (slot 35)
-        "anchors": [
-            (0,   0),
-            (10, -1800),
-            (19, -5200),      # 🟡 Low
-            (26, -10100),     # 🟠 Medium
-            (35, -15400),     # 🔴 High
-            (47, -17000),
-        ],
-    },
-    "2026-04-29": {
-        # Low @ 11:00 (slot 22), Medium @ 15:30 (slot 31), High @ 20:30 (slot 41)
-        "anchors": [
-            (0,   0),
-            (12, -1200),
-            (22, -5300),      # 🟡 Low
-            (31, -10400),     # 🟠 Medium
-            (41, -15200),     # 🔴 High
-            (47, -16800),
-        ],
-    },
-    "2026-04-30": {
-        # Low @ 08:30 (slot 17), Medium @ 12:00 (slot 24), High @ 16:00 (slot 32)
-        "anchors": [
-            (0,   0),
-            (8,  -1000),
-            (17, -5400),      # 🟡 Low
-            (24, -10300),     # 🟠 Medium
-            (32, -15100),     # 🔴 High
-            (47, -17200),
-        ],
-    },
-}
+    }
 
 
 def interpolate_cumulative(anchors, n_slots=48):
@@ -246,7 +258,7 @@ def main():
         print(f"\n  Final cumulative: {actual_cum/1_000_000:,.1f} M Baht")
         print(f"  Files generated: 48")
 
-    print(f"\n✅ Done — {4 * 48} CSV files written to {OUT_DIR}/")
+    print(f"\n✅ Done — {len(DATE_CONFIGS) * 48} CSV files written to {OUT_DIR}/")
 
 
 if __name__ == "__main__":
