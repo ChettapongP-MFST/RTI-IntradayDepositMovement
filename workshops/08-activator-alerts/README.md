@@ -275,11 +275,15 @@ Create **3 separate rules** — one per alert tier. Each rule uses **exclusive n
 
 | Rule name | Conditions (AND) | Fires when |
 |---|---|---|
-| `rule_alert_Low` | `Cum_Net_Total` ≤ `-5000` **AND** `Cum_Net_Total` > `-10000` | 🟡 Low only (−5,000 to −9,999 M) |
-| `rule_alert_Medium` | `Cum_Net_Total` ≤ `-10000` **AND** `Cum_Net_Total` > `-15000` | 🟠 Medium only (−10,000 to −14,999 M) |
-| `rule_alert_High` | `Cum_Net_Total` ≤ `-15000` | 🔴 High only (−15,000 M or below) |
+| `rule_alert_Low` | `Cum_Net_Total` ≤ `-5000` **AND** > `-10000` **AND** `Alert_Flag` changes | 🟡 Low only — once per transition |
+| `rule_alert_Medium` | `Cum_Net_Total` ≤ `-10000` **AND** > `-15000` **AND** `Alert_Flag` changes | 🟠 Medium only — once per transition |
+| `rule_alert_High` | `Cum_Net_Total` ≤ `-15000` **AND** `Alert_Flag` changes | 🔴 High only — once per transition |
 
 > Since the KQL query outputs values in **millions of Baht**, `-5000` means −5,000 M Baht.
+>
+> 💡 The **Changes** condition on `Alert_Flag` ensures the rule fires **only once per tier transition** (e.g., Normal → Low), not on every evaluation cycle while the value stays in range.
+>
+> ⚠️ **Condition order matters!** The `Changes` condition **must be Condition 1** (first). Placing it after numeric conditions causes a save error.
 
 #### A.1 Configure rule 1 — 🟡 Low
 
@@ -287,45 +291,57 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 
 1. Right-click the rule in the Explorer panel → **Rename** → `rule_alert_Low`.
 2. In the **Definition** tab (right panel), under **Condition 1**:
-   - **Operation**: `On every value` → expand **Numeric state** → select **`Is less than or equal to`**.
+   - **Operation**: `On every value` → expand **Common change** → select **`Changes`**.
+   - **Column**: select `Alert_Flag`.
+   - **Occurrence**: `Every time the condition is met`.
+3. Click **+ Add condition** to add **Condition 2**:
+   - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-5000`.
-3. Click **+ Add condition** to add **Condition 2**:
+4. Click **+ Add condition** to add **Condition 3**:
    - **Operation**: expand **Numeric state** → select **`Is greater than`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-10000`.
-4. Configure the **Action** (see section 8.5 for Teams message template).
-5. Click **Save and update**.
+5. Configure the **Action** (see section 8.5 for Teams message template).
+6. Click **Save and update**.
 
-> This rule fires when −10,000 < Cum_Net_Total ≤ −5,000 (i.e., 🟡 Low tier only).
+> This rule fires when −10,000 < Cum_Net_Total ≤ −5,000 **and** the alert tier just changed (i.e., 🟡 Low — once per transition).
 
 #### A.2 Configure rule 2 — 🟠 Medium
 
 1. In the Explorer panel, right-click **DepositMovement event** → **New rule** → name it `rule_alert_Medium`.
 2. Under **Condition 1**:
+   - **Operation**: expand **Common change** → select **`Changes`**.
+   - **Column**: select `Alert_Flag`.
+   - **Occurrence**: `Every time the condition is met`.
+3. Click **+ Add condition** to add **Condition 2**:
    - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-10000`.
-3. Click **+ Add condition** to add **Condition 2**:
+4. Click **+ Add condition** to add **Condition 3**:
    - **Operation**: expand **Numeric state** → select **`Is greater than`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-15000`.
-4. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium).
-5. Click **Save and update**.
+5. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium).
+6. Click **Save and update**.
 
-> This rule fires when −15,000 < Cum_Net_Total ≤ −10,000 (i.e., 🟠 Medium tier only).
+> This rule fires when −15,000 < Cum_Net_Total ≤ −10,000 **and** the alert tier just changed (i.e., 🟠 Medium — once per transition).
 
 #### A.3 Configure rule 3 — 🔴 High
 
 1. Right-click **DepositMovement event** → **New rule** → name it `rule_alert_High`.
 2. Under **Condition 1**:
+   - **Operation**: expand **Common change** → select **`Changes`**.
+   - **Column**: select `Alert_Flag`.
+   - **Occurrence**: `Every time the condition is met`.
+3. Click **+ Add condition** to add **Condition 2**:
    - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
    - **Column**: select `Cum_Net_Total`.
    - **Value**: enter `-15000`.
-3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` will show 🔴 High).
-4. Click **Save and update**.
+4. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` will show 🔴 High).
+5. Click **Save and update**.
 
-> This rule fires when Cum_Net_Total ≤ −15,000 (i.e., 🔴 High tier only). Only 1 condition needed since there is no lower bound.
+> This rule fires when Cum_Net_Total ≤ −15,000 **and** the alert tier just changed (i.e., 🔴 High — once per transition).
 
 #### Final Explorer panel (Option A)
 
@@ -353,13 +369,17 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_All`:
 
 1. Right-click the rule in the Explorer panel → **Rename** → `rule_alert_All`.
 2. In the **Definition** tab (right panel), under **Condition 1**:
-   - **Operation**: `On every value` → expand **Text state** → select **`Is not equal to`**.
+   - **Operation**: `On every value` → expand **Common change** → select **`Changes`**.
+   - **Column**: select `Alert_Flag`.
+   - **Occurrence**: `Every time the condition is met`.
+3. Click **+ Add condition** to add **Condition 2**:
+   - **Operation**: expand **Text state** → select **`Is not equal to`**.
    - **Column**: select `Alert_Flag`.
    - **Value**: enter `✅ Normal`.
-3. Configure the **Action** (see section 8.5 for Teams message template).
-4. Click **Save and update**.
+4. Configure the **Action** (see section 8.5 for Teams message template).
+5. Click **Save and update**.
 
-> 💡 This fires whenever `Alert_Flag` is `🟡 Low`, `🟠 Medium`, or `🔴 High` — i.e., any threshold breach. The exact tier is visible in the Teams message via `{Alert_Flag}`.
+> 💡 Condition 1 ensures the rule fires **only once per tier transition**. Condition 2 filters out `✅ Normal` so only breaches trigger alerts. The exact tier is visible in the Teams message via `{Alert_Flag}`.
 
 #### Final Explorer panel (Option B)
 
