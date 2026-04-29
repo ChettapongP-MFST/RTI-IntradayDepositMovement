@@ -130,49 +130,29 @@ The query has **5 phases** — scalars are computed first, then channels are piv
 ```
 
 ```kusto
-// ── Phase 1: Set up time context ────────────────────
-// now() returns UTC. Add 7h → Bangkok time.
-// startofday() truncates to midnight → matches the Date column in KQL.
-let now_bkk = now() + 7h;   // ⏰ UTC → ICT (Bangkok)
+// Phase 1: UTC → Bangkok time
+let now_bkk = now() + 7h;
 let today = startofday(now_bkk);
-
-// ── Phase 2: Calculate grand total (single scalar) ──
-// toscalar() runs the inner query and returns ONE number (not a table).
-// It sums Net_Amount across ALL channels, ALL time slots, ALL products for today.
-// Example result: 6,100,000 (positive = net inflow) or -10,245,600,000 (net outflow).
+// Phase 2: Grand total (scalar)
 let cum_total = toscalar(
     DepositMovement
     | where Date == today
     | summarize sum(Net_Amount)
 );
-
-// ── Phase 3: Determine alert tier ───────────────────
-// case() works like if/else if/else — evaluates top to bottom, first match wins.
-// Order matters: High (-15B) is checked FIRST.
-// If cum_total = -12B → fails -15B check → hits -10B check → returns "🟠 Medium".
-// Last argument "✅ Normal" is the default (else) when no threshold is breached.
+// Phase 3: Alert tier
 let alert_flag = case(
     cum_total <= -15000000000, "🔴 High",
     cum_total <= -10000000000, "🟠 Medium",
     cum_total <=  -5000000000, "🟡 Low",
     "✅ Normal"
 );
-
-// ── Phase 4: Get latest time slot (single scalar) ───
-// Returns one value: the most recent Time slot that has data today.
-// Example: "23:30-24:00" (all 48 slots loaded) or "10:30-11:00" (partial day).
-// Tells the Teams recipient "data is current up to this slot."
+// Phase 4: Latest time slot (scalar)
 let latest_time = toscalar(
     DepositMovement
     | where Date == today
     | summarize max(Time)
 );
-
-// ── Phase 5: Pivot channels into ONE row + metadata ─
-// First: summarize Net per Channel (4 rows).
-// Then: take_anyif() picks the value for each specific channel → collapses into 1 row.
-// Finally: extend attaches scalars (cum_total, alert_flag, etc.) to the single row.
-// Result: ONE row with ATM_Net, BCMS_Net, ENET_Net, TELL_Net + alert metadata.
+// Phase 5: Pivot channels into one row
 DepositMovement
 | where Date == today
 | summarize Net = round(sum(Net_Amount) / 1000000, 1) by Channel
@@ -188,6 +168,16 @@ DepositMovement
     Alert_Time    = now_bkk,
     Date          = format_datetime(today, 'yyyy-MM-dd')
 ```
+
+**Phase-by-phase explanation:**
+
+| Phase | What it does |
+|---|---|
+| **1 — Time context** | `now()` returns UTC; add 7h for Bangkok (ICT). `startofday()` truncates to midnight to match the `Date` column. |
+| **2 — Grand total** | `toscalar()` returns a single number: the sum of `Net_Amount` across all channels, time slots, and products for today. |
+| **3 — Alert tier** | `case()` evaluates top-to-bottom (High first). E.g. if `cum_total` = −12 B → fails −15 B check → hits −10 B → returns "🟠 Medium". |
+| **4 — Latest time slot** | Returns the most recent `Time` slot with data today (e.g. `10:30-11:00`). Tells the recipient how current the data is. |
+| **5 — Pivot + metadata** | Summarizes net per channel (4 rows), then `take_anyif()` collapses into 1 row. `extend` attaches the scalars from phases 2–4. |
 
 > 💡 **Why pivot into one row?** Activator sends **one Teams message per row**. With 4 rows (one per channel), you'd get 4 duplicate messages. By pivoting, we get **1 message** that includes all channel values via `{ATM_Net}`, `{BCMS_Net}`, `{ENET_Net}`, `{TELL_Net}` placeholders.
 

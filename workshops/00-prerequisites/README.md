@@ -78,6 +78,15 @@ Allow the firewall-enabled ADLS Gen2 to be accessed by the Fabric pipeline using
 
 ## 0.6 Grant RBAC on the storage account (Azure Portal)
 
+Two roles are required on the storage account:
+
+| Role | Purpose | Needed by |
+|---|---|---|
+| **Storage Blob Data Contributor** | Read/write blobs in the `intraday-deposits` container | Pipeline (Copy activity) |
+| **EventGrid EventSubscription Contributor** | Create Event Grid subscriptions for `BlobCreated` events | Event-based trigger ([Workshop 05](../05-event-trigger/)) |
+
+### 0.6.1 Assign Storage Blob Data Contributor
+
 1. **[portal.azure.com](https://portal.azure.com)** → open the storage account from Workshop 01.
 2. Left menu → **Access control (IAM)** → **+ Add** → **Add role assignment**.
 3. **Role** tab: search **Storage Blob Data Contributor** → select → **Next**.
@@ -86,6 +95,20 @@ Allow the firewall-enabled ADLS Gen2 to be accessed by the Fabric pipeline using
    - **+ Select members** → paste the **Workspace Identity Object ID** from 0.5 (or search by workspace name) → **Select**.
 5. **Review + assign** → **Review + assign**.
 6. Verify: IAM → **Role assignments** tab → filter by *Storage Blob Data Contributor* → the workspace identity should appear.
+
+### 0.6.2 Assign EventGrid EventSubscription Contributor
+
+> 💡 This role allows Fabric to create an Event Grid subscription on the storage account when you set up the event-based trigger in [Workshop 05](../05-event-trigger/). Without it, the "Connect" step will fail with a permissions error.
+
+1. Still on the storage account → **Access control (IAM)** → **+ Add** → **Add role assignment**.
+2. **Role** tab: search **EventGrid EventSubscription Contributor** → select → **Next**.
+3. **Members** tab:
+   - Assign access to — **User, group, or service principal**.
+   - **+ Select members** → select **your own user account** (the person creating the trigger in Fabric) → **Select**.
+4. **Review + assign** → **Review + assign**.
+5. Verify: IAM → **Role assignments** tab → filter by *EventGrid EventSubscription Contributor* → your account should appear.
+
+> ⚠️ **Who gets this role?** Unlike `Storage Blob Data Contributor` (assigned to the *workspace identity*), `EventGrid EventSubscription Contributor` is assigned to the **user account** that will create the event trigger in Fabric Portal.
 
 ## 0.7 Add the Fabric resource instance rule
 
@@ -146,7 +169,8 @@ If custom-template deployment is restricted in your tenant, send the admin the s
 - [ ] All values in **0.3** filled
 - [ ] Azure Portal and Fabric Portal both open in your browser with the correct tenant selected
 - [ ] Workspace identity created in Fabric; Object ID captured
-- [ ] `Storage Blob Data Contributor` role visible on the storage account IAM page
+- [ ] `Storage Blob Data Contributor` role visible on the storage account IAM page (assigned to workspace identity)
+- [ ] `EventGrid EventSubscription Contributor` role visible on the storage account IAM page (assigned to your user account)
 - [ ] **Resource instances** on the Networking blade lists the Fabric workspace
 
 → Proceed to **[Workshop 01 — Provision ADLS Gen2](../01-provision-adls-gen2/)**

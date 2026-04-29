@@ -7,6 +7,20 @@ Wire the pipeline to `Microsoft.Storage.BlobCreated` events so every CSV landing
 
 ---
 
+## 5.0 RBAC prerequisite — EventGrid EventSubscription Contributor
+
+Creating an event-based trigger on ADLS Gen2 requires the **EventGrid EventSubscription Contributor** role on the storage account. This allows Fabric to create an Event Grid subscription for `Microsoft.Storage.BlobCreated` events.
+
+If you followed [Workshop 00 § 0.6.2](../00-prerequisites/README.md#062-assign-eventgrid-eventsubscription-contributor), this is already in place. If not, assign it now:
+
+1. **[portal.azure.com](https://portal.azure.com)** → storage account → **Access control (IAM)** → **+ Add** → **Add role assignment**.
+2. **Role**: `EventGrid EventSubscription Contributor` → **Next**.
+3. **Members**: select **your user account** (the person creating the trigger) → **Select** → **Review + assign**.
+
+> ⚠️ Without this role, step 5.3.3 "Connect" will fail with a permissions error.
+
+---
+
 ## 5.1 Open the trigger panel
 
 1. Open pipeline **`pl_ingest_DepositMovement`**.
