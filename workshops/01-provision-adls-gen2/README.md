@@ -28,7 +28,7 @@ Create the firewall-enabled ADLS Gen2 storage account and container that will re
 4. **Networking** tab:
    - Public network access — **Enabled from selected virtual networks and IP addresses**
    - Under **Exceptions** → check ✅ **Allow Azure services on the trusted services list to access this storage account**
-   - Under **Firewall** → check ✅ **Add your client IP address (xx.xx.xx.xx)** *(temporary — used by Workshop 06 uploads; remove in Workshop 09)*
+   - Under **Firewall** → check ✅ **Add your client IP address (xx.xx.xx.xx)** *(temporary — used by Workshop 06 uploads; remove after testing)*
 5. **Data protection / Encryption** — leave defaults.
 6. **Review + create** → **Create**. Wait for deployment (~1 min).
 

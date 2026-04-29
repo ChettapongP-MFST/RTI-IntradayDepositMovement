@@ -768,7 +768,7 @@ You *could* change `vLoadTs` from `@utcNow()` to `@addHours(utcNow(), 7)`, but i
 | **Workshop 04 — ProcessedFiles audit** | `IngestedAtUtc` (from `SYSUTCDATETIME()`) is real UTC, but `load_ts` in KQL is UTC+7. Two different "times" for the same event. | **Confusing** |
 | **Workshop 07 — Power BI** | Timestamps display as Thailand time (good!), but if someone adds +7 in DAX (standard practice), they get UTC+14. | **Breaking** |
 | **Workshop 08 — Activator alerts** | Alert conditions comparing against KQL `now()` are off by 7 hours. Alerts fire late or early. | **Breaking** |
-| **Workshop 09 — Monitoring** | Cross-referencing pipeline run times (UTC) with `load_ts` (UTC+7) creates confusion during incident triage. | **Confusing** |
+
 
 ### Recommended approach: store UTC, convert at display
 

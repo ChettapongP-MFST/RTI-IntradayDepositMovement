@@ -3,7 +3,7 @@
 **Microsoft Fabric Real-Time Intelligence — Pattern B**
 ADLS Gen2 → Fabric Data Pipeline (event-triggered) → Eventhouse (KQL DB) → Power BI → Activator → MS Teams
 
-A modular, hands-on workshop series that builds a near-real-time intraday deposit monitoring solution on Microsoft Fabric using **Pattern B** (Eventhouse-centric RTI). Designed to be completed sequentially from Workshop 00 to Workshop 09.
+A modular, hands-on workshop series that builds a near-real-time intraday deposit monitoring solution on Microsoft Fabric using **Pattern B** (Eventhouse-centric RTI). Designed to be completed sequentially from Workshop 00 to Workshop 08.
 
 > 🖱️ **Portal-first design** — every workshop is written for **analyst end-users** working in a browser (Azure Portal + Fabric Portal + Power BI). No Azure CLI or PowerShell is required for the happy path. The `scripts/` folders retain optional automation for platform engineers.
 
@@ -34,8 +34,6 @@ This workshop series walks through building that solution end-to-end.
 | 06 | [Simulate Ingestion](workshops/06-simulate-ingestion/) | PowerShell / AzCopy | Replay 16 CSVs (real or accelerated) |
 | 07 | [Power BI Report](workshops/07-powerbi-report/) | Power BI (+ optional RTD) | DirectQuery KPI report with 30s refresh |
 | 08 | [Activator Alerts](workshops/08-activator-alerts/) | Data Activator | KQL-driven Teams notifications |
-| 09 | [Validate & Monitor](workshops/09-validate-monitor/) | Monitor hub | End-to-end checklist + housekeeping |
-| 10 | [Advanced Dashboard & Alerts](workshops/10-advanced-dashboard-alerts/) | Power BI + Data Activator | Gold-layer KPIs (4 pages), ratio metrics, 6 production alert rules |
 
 ---
 
@@ -81,8 +79,7 @@ RTI-IntradayDepositMovement/
 │   │   └── scripts/
 │   ├── 07-powerbi-report/
 │   ├── 08-activator-alerts/
-│   ├── 09-validate-monitor/
-│   └── 10-advanced-dashboard-alerts/
+│   └── 08-activator-alerts/
 ├── resources/
 │   └── datasets/          # 16 mock CSVs (30-min intraday slots)
 ├── images/                # Architecture diagrams & screenshots

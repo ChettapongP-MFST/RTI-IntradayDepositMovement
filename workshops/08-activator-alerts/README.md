@@ -3,7 +3,6 @@
 Configure **Data Activator (Reflex)** to monitor the intraday cumulative `Net_Amount` from the `DepositMovement` KQL table and send **tiered alerts to Microsoft Teams** when thresholds are breached — with Channel-level breakdown in every notification.
 
 **Prerequisite:** [Workshop 07](../07-powerbi-report/) complete
-**Next:** [Workshop 09 — Validate & Monitor](../09-validate-monitor/)
 
 ---
 
@@ -561,8 +560,6 @@ In the Activator item:
 - [ ] Teams notification includes: **Alert flag**, **Cumulative Net**, **Channel breakdown**, **Date/Time**
 - [ ] At least **one test alert** successfully delivered to Teams
 - [ ] Rules fire **once per breach** (not repeatedly every evaluation cycle)
-
-→ Proceed to **[Workshop 09 — Validate & Monitor](../09-validate-monitor/)**
 
 ---
 
