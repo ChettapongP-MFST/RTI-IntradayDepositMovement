@@ -321,36 +321,36 @@ For the rule, configure the Teams notification:
 
 ### 8.5.2 Message template
 
-Use **dynamic content** placeholders from the query output columns. Format the message as follows:
+Use **dynamic content** placeholders from the query output columns. In the Activator message editor, click **Insert dynamic content** to insert each chip (shown as `{ColumnName}` below).
 
-**Subject line:**
-```
-⚠ Deposit Alert {Alert_Flag} — Cumulative Net: {Cum_Net_Total} M
-```
-
-**Message body:**
+**Headline:**
 ```
 🏦 Intraday Deposit Movement Alert
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
-🚨 Alert Level:    {Alert_Flag}
-📅 Date:           {Date}
-🕐 Latest Slot:    {Latest_Time}
-⏰ Alert Time:     {Alert_Time}
+**Message:**
+```
+──
 
-💰 Cumulative Net: {Cum_Net_Total} M Baht
+Alert Level:    {Alert_Flag}
+Date:           {Date}
+Latest Slot:    {Latest_Time}
+Alert Time:     {Alert_Time}
 
-📊 Channel Breakdown:
-┌─────────┬────────────┐
-│ Channel │  Net (M)   │
-├─────────┼────────────┤
-│ ATM     │ {ATM_Net}  │
-│ BCMS    │ {BCMS_Net} │
-│ ENET    │ {ENET_Net} │
-│ TELL    │ {TELL_Net} │
-└─────────┴────────────┘
+Cumulative Net: {Cum_Net_Total}  M Baht
+
+Channel Breakdown:
+
+Channel:
+
+ATM     {ATM_Net}  M THB
+BCMS    {BCMS_Net}  M THB
+ENET    {ENET_Net}  M THB
+TELL    {TELL_Net}  M THB
+
 
 Action Required:
+
 • Low (-5,000M): Monitor closely
 • Medium (-10,000M): Escalate to Treasury
 • High (-15,000M): Immediate management action
@@ -358,7 +358,9 @@ Action Required:
 Dashboard: [Open Power BI Report]
 ```
 
-> 💡 The query returns **one row** with pivoted channel columns. Use the **Insert dynamic content** dropdown to map each `{field}` to the corresponding query column. This ensures **one Teams message** per alert with all 4 channels included.
+> 💡 Each `{ColumnName}` above becomes a **dynamic content chip** in the editor (displayed as a pill with `×` to remove). Use the **Insert dynamic content** dropdown to map: `Alert_Flag`, `Date`, `Latest_Time`, `Alert_Time`, `Cum_Net_Total`, `ATM_Net`, `BCMS_Net`, `ENET_Net`, `TELL_Net`.
+
+**Context columns (optional):** In the **Context** dropdown at the bottom, select the columns you want included as supplementary data in the Teams notification (e.g., `Cum_Net_Total`, `Alert_Flag`).
 
 ### 8.5.3 Alternative — Adaptive Card (richer format)
 
