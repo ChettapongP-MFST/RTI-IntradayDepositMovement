@@ -385,12 +385,14 @@ If data doesn't breach −5,000 M, temporarily adjust the rule thresholds:
 2. The pipeline ingests it → Activator evaluates on the next cycle → Teams alert fires.
 
 Use the pre-generated mock data in **`resources/datasets/extra-mock-up/`**.
-All 31 days of May 2026 (2026-05-01 → 2026-05-31) are designed to breach **all 3 tiers** within a single intraday.
+All 33 days (2026-04-29 → 2026-05-31) are designed to breach **all 3 tiers** within a single intraday.
 
 #### Summary — Alert Breach Windows per Date
 
 | Date | 🟡 Low ≤ −5,000 M | 🟠 Medium ≤ −10,000 M | 🔴 High ≤ −15,000 M | EOD Cumulative |
 |---|---|---|---|---|
+| **2026-04-29** | **09:00 – 09:30** | **13:00 – 13:30** | **17:30 – 18:00** | −17,200 M |
+| **2026-04-30** | **10:00 – 10:30** | **14:30 – 15:00** | **19:00 – 19:30** | −16,800 M |
 | **2026-05-01** | **08:30 – 09:00** | **12:30 – 13:00** | **16:30 – 17:00** | −17,500 M |
 | **2026-05-02** | **09:00 – 09:30** | **13:00 – 13:30** | **17:30 – 18:00** | −17,200 M |
 | **2026-05-03** | **09:30 – 10:00** | **14:00 – 14:30** | **18:30 – 19:00** | −16,600 M |
