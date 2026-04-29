@@ -234,7 +234,7 @@ The Activator continuously evaluates the KQL query on a schedule. Each evaluatio
 
 ---
 
-## 8.4 Configure the alert rule
+## 8.4 Configure the alert rules (3 rules — one per tier)
 
 After clicking **Open**, you are inside `act-deposit-alerts` with the rule `rule_Net_Amount_alert` selected.
 
@@ -245,34 +245,67 @@ DepositMovement
        └─ rule_Net_Amount_alert   (Running)
 ```
 
-### Configure the Condition
+You will create **3 rules** — one per alert tier. Each rule has its own condition and fires independently.
 
-In the **Definition** tab (right panel), under **Condition 1**:
+> 💡 **Why 3 rules, not 1 with 3 conditions?** In Fabric Activator, multiple conditions within a single rule act as **AND** (all must be true simultaneously). Since −15,000 ≤ −10,000 ≤ −5,000, a single rule with all 3 conditions would only fire when High is breached. Separate rules let each tier fire independently.
 
-1. Change **Operation** from `On every value` → **`Is less than or equal to`** (numeric).
-2. **Column**: select `Cum_Net_Total`.
-3. **Value**: enter `-5000`.
-   > This triggers when the cumulative net outflow breaches the 🟡 Low threshold (−5,000 M).
-   > Since the KQL query outputs values in millions, `−5000` means −5,000 M Baht.
+### Overview
 
-> 💡 **Single rule vs. three rules**: Because the KQL query already outputs `Alert_Flag` (Normal / Low / Medium / High), you can use a **single rule** with:
-> - Operation: **`Is not equal to`** (string)
-> - Column: `Alert_Flag`
-> - Value: `Normal`
->
-> This fires for **any** tier (Low, Medium, High). The `Alert_Flag` value in the Teams message tells you which tier was breached.
+| Rule name | Condition | Column | Value | Fires when |
+|---|---|---|---|---|
+| `rule_alert_Low` | Is less than or equal to | `Cum_Net_Total` | `-5000` | 🟡 Low, 🟠 Medium, or 🔴 High |
+| `rule_alert_Medium` | Is less than or equal to | `Cum_Net_Total` | `-10000` | 🟠 Medium or 🔴 High |
+| `rule_alert_High` | Is less than or equal to | `Cum_Net_Total` | `-15000` | 🔴 High only |
 
-### Configure the Action
+> Since the KQL query outputs values in **millions of Baht**, `-5000` means −5,000 M Baht.
 
-Scroll down to the **Action** section (see section 8.5 for Teams message template).
+### 8.4.1 Configure rule 1 — 🟡 Low
 
-### Save
+Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 
-Click **Save and update** at the bottom right.
+1. Right-click the rule in the Explorer panel → **Rename** → `rule_alert_Low`.
+2. In the **Definition** tab (right panel), under **Condition 1**:
+   - **Operation**: `On every value` → expand **Numeric state** → select **`Is less than or equal to`**.
+   - **Column**: select `Cum_Net_Total`.
+   - **Value**: enter `-5000`.
+3. Configure the **Action** (see section 8.5 for Teams message template).
+4. Click **Save and update**.
+
+### 8.4.2 Configure rule 2 — 🟠 Medium
+
+1. In the Explorer panel, right-click **DepositMovement event** → **New rule** → name it `rule_alert_Medium`.
+2. Under **Condition 1**:
+   - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
+   - **Column**: select `Cum_Net_Total`.
+   - **Value**: enter `-10000`.
+3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium or 🔴 High).
+4. Click **Save and update**.
+
+### 8.4.3 Configure rule 3 — 🔴 High
+
+1. Right-click **DepositMovement event** → **New rule** → name it `rule_alert_High`.
+2. Under **Condition 1**:
+   - **Operation**: expand **Numeric state** → select **`Is less than or equal to`**.
+   - **Column**: select `Cum_Net_Total`.
+   - **Value**: enter `-15000`.
+3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` will show 🔴 High).
+4. Click **Save and update**.
+
+### Final Explorer panel
+
+After creating all 3 rules, the Explorer panel should show:
+
+```
+DepositMovement
+  └─ DepositMovement event
+       ├─ rule_alert_Low      (Running)
+       ├─ rule_alert_Medium   (Running)
+       └─ rule_alert_High     (Running)
+```
 
 ### Quick test
 
-Click **Send me a test action** in the toolbar to verify the Teams connection works before waiting for a real trigger.
+Click **Send me a test action** on each rule to verify all 3 Teams connections work before waiting for a real trigger.
 
 ---
 
@@ -454,7 +487,8 @@ In the Activator item:
 ## ✅ Exit Criteria
 
 - [ ] Activator item `act-deposit-alerts` exists and is running (green)
-- [ ] **3 rules** configured: Low (−5,000 M), Medium (−10,000 M), High (−15,000 M)
+- [ ] **3 rules** configured: `rule_alert_Low` (−5,000 M), `rule_alert_Medium` (−10,000 M), `rule_alert_High` (−15,000 M)
+- [ ] Each rule uses **Numeric state → Is less than or equal to** on `Cum_Net_Total`
 - [ ] Each rule targets a **Microsoft Teams** channel
 - [ ] Teams notification includes: **Alert flag**, **Cumulative Net**, **Channel breakdown**, **Date/Time**
 - [ ] At least **one test alert** successfully delivered to Teams
