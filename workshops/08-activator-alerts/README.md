@@ -234,7 +234,7 @@ The Activator continuously evaluates the KQL query on a schedule. Each evaluatio
 
 ---
 
-## 8.4 Configure the alert rules (3 rules — one per tier)
+## 8.4 Configure the alert rules
 
 After clicking **Open**, you are inside `act-deposit-alerts` with the rule `rule_Net_Amount_alert` selected.
 
@@ -245,11 +245,33 @@ DepositMovement
        └─ rule_Net_Amount_alert   (Running)
 ```
 
-You will create **3 rules** — one per alert tier. Each rule has its own condition and fires independently.
+Choose **one** of the two options below. Both achieve the same outcome — alerting on 3 tiers — but differ in structure and flexibility.
 
-> 💡 **Why 3 rules, not 1 with 3 conditions?** In Fabric Activator, multiple conditions within a single rule act as **AND** (all must be true simultaneously). Since −15,000 ≤ −10,000 ≤ −5,000, a single rule with all 3 conditions would only fire when High is breached. Separate rules let each tier fire independently.
+### Trade-off comparison
 
-### Overview
+| | **Option A** — 3 rules (1 condition each) | **Option B** — 1 rule (text condition) |
+|---|---|---|
+| **Rules to create** | 3 (`rule_alert_Low`, `rule_alert_Medium`, `rule_alert_High`) | 1 (`rule_alert_All`) |
+| **Condition type** | Numeric state: `Cum_Net_Total` ≤ threshold | Text state: `Alert_Flag` ≠ `✅ Normal` |
+| **Fires when** | Each rule fires independently at its own threshold | Single rule fires for any tier (Low, Medium, or High) |
+| **Tier identification** | Rule name + `{Alert_Flag}` in message | `{Alert_Flag}` in message only |
+| **Different actions per tier** | ✅ Yes — e.g., Low → monitor channel, High → management channel | ❌ No — same action for all tiers |
+| **Different Teams channels** | ✅ Yes — route each tier to a different channel | ❌ No — one channel for all |
+| **Setup complexity** | Higher — 3 rules × 1 action each | Lower — 1 rule × 1 action |
+| **Maintenance** | Update 3 rules if threshold changes | Update 1 rule |
+| **Messages per breach** | May receive multiple (e.g., Low + Medium fire when crossing −10,000 M) | Always 1 message per evaluation |
+
+> 💡 **Recommendation:** Start with **Option B** for simplicity. Switch to **Option A** later if you need per-tier routing.
+
+---
+
+### Option A — 3 rules (one condition per rule)
+
+Create **3 separate rules** — one per alert tier. Each rule has its own numeric condition and fires independently.
+
+> ⚠️ In Fabric Activator, multiple conditions within a single rule act as **AND** (all must be true simultaneously). Since −15,000 ≤ −10,000 ≤ −5,000, a single rule with 3 numeric conditions would only fire when High is breached. Separate rules let each tier fire independently.
+
+#### Overview
 
 | Rule name | Condition | Column | Value | Fires when |
 |---|---|---|---|---|
@@ -259,7 +281,7 @@ You will create **3 rules** — one per alert tier. Each rule has its own condit
 
 > Since the KQL query outputs values in **millions of Baht**, `-5000` means −5,000 M Baht.
 
-### 8.4.1 Configure rule 1 — 🟡 Low
+#### A.1 Configure rule 1 — 🟡 Low
 
 Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 
@@ -271,7 +293,7 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 3. Configure the **Action** (see section 8.5 for Teams message template).
 4. Click **Save and update**.
 
-### 8.4.2 Configure rule 2 — 🟠 Medium
+#### A.2 Configure rule 2 — 🟠 Medium
 
 1. In the Explorer panel, right-click **DepositMovement event** → **New rule** → name it `rule_alert_Medium`.
 2. Under **Condition 1**:
@@ -281,7 +303,7 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` column in the message will show 🟠 Medium or 🔴 High).
 4. Click **Save and update**.
 
-### 8.4.3 Configure rule 3 — 🔴 High
+#### A.3 Configure rule 3 — 🔴 High
 
 1. Right-click **DepositMovement event** → **New rule** → name it `rule_alert_High`.
 2. Under **Condition 1**:
@@ -291,9 +313,7 @@ Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_Low`:
 3. Configure the **Action** (same Teams channel, same message template — the `Alert_Flag` will show 🔴 High).
 4. Click **Save and update**.
 
-### Final Explorer panel
-
-After creating all 3 rules, the Explorer panel should show:
+#### Final Explorer panel (Option A)
 
 ```
 DepositMovement
@@ -303,9 +323,41 @@ DepositMovement
        └─ rule_alert_High     (Running)
 ```
 
-### Quick test
+#### Quick test
 
-Click **Send me a test action** on each rule to verify all 3 Teams connections work before waiting for a real trigger.
+Click **Send me a test action** on each rule to verify all 3 Teams connections work.
+
+---
+
+### Option B — 1 rule (single text condition)
+
+Use the `Alert_Flag` column that the KQL query already computes. A single rule fires whenever **any** tier is breached — the `{Alert_Flag}` value in the Teams message tells the recipient which tier.
+
+#### B.1 Configure the rule
+
+Rename the existing rule `rule_Net_Amount_alert` → `rule_alert_All`:
+
+1. Right-click the rule in the Explorer panel → **Rename** → `rule_alert_All`.
+2. In the **Definition** tab (right panel), under **Condition 1**:
+   - **Operation**: `On every value` → expand **Text state** → select **`Is not equal to`**.
+   - **Column**: select `Alert_Flag`.
+   - **Value**: enter `✅ Normal`.
+3. Configure the **Action** (see section 8.5 for Teams message template).
+4. Click **Save and update**.
+
+> 💡 This fires whenever `Alert_Flag` is `🟡 Low`, `🟠 Medium`, or `🔴 High` — i.e., any threshold breach. The exact tier is visible in the Teams message via `{Alert_Flag}`.
+
+#### Final Explorer panel (Option B)
+
+```
+DepositMovement
+  └─ DepositMovement event
+       └─ rule_alert_All   (Running)
+```
+
+#### Quick test
+
+Click **Send me a test action** to verify the Teams connection works.
 
 ---
 
@@ -489,8 +541,9 @@ In the Activator item:
 ## ✅ Exit Criteria
 
 - [ ] Activator item `act-deposit-alerts` exists and is running (green)
-- [ ] **3 rules** configured: `rule_alert_Low` (−5,000 M), `rule_alert_Medium` (−10,000 M), `rule_alert_High` (−15,000 M)
-- [ ] Each rule uses **Numeric state → Is less than or equal to** on `Cum_Net_Total`
+- [ ] Alert rules configured using **Option A** or **Option B**:
+  - **Option A**: 3 rules — `rule_alert_Low` (−5,000 M), `rule_alert_Medium` (−10,000 M), `rule_alert_High` (−15,000 M), each using **Numeric state → Is less than or equal to** on `Cum_Net_Total`
+  - **Option B**: 1 rule — `rule_alert_All`, using **Text state → Is not equal to** on `Alert_Flag` with value `✅ Normal`
 - [ ] Each rule targets a **Microsoft Teams** channel
 - [ ] Teams notification includes: **Alert flag**, **Cumulative Net**, **Channel breakdown**, **Date/Time**
 - [ ] At least **one test alert** successfully delivered to Teams
