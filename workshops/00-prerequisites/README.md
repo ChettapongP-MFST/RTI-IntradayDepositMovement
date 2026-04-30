@@ -29,6 +29,17 @@ Before starting any deployment, verify Azure and Fabric readiness, collect the i
 | 5 | Your account has **Admin** or **Member** role on the workspace | Manage access |
 | 6 | Eventhouse licence available (part of Fabric F-SKU) | Create test Eventhouse |
 
+## 0.2.1 Microsoft Teams prerequisite (for Activator alerts)
+
+> ⚠️ **Required for [Workshop 08 — Activator Alerts](../08-activator-alerts/).** If the Activator Teams app is blocked, alert notifications to Teams channels will fail. You can use **Email** alerts as a workaround.
+
+| # | Item | How to verify / fix |
+|---|---|---|
+| 1 | **Activator Teams app** is allowed in your tenant | [Teams Admin Center](https://admin.teams.microsoft.com) → **Teams apps** → **Manage apps** → search "Activator" → status must be **Allowed** |
+| 2 | **App permission policy** includes the Activator app | Teams Admin Center → **Teams apps** → **Permission policies** → ensure the policy assigned to your users does not block the Activator app |
+
+> 💡 **Who can do this?** Only a **Teams Administrator** or **Global Admin** can change app permissions in the Teams Admin Center. If you are not a Teams admin, ask your IT admin to unblock the Activator Teams app for your organization.
+
 ## 0.3 Information to collect
 
 Keep these values at hand — later workshops reference them as variables.
